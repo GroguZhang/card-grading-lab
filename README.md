@@ -35,7 +35,7 @@
 - **六家阈值表**：PSA / BGS / CGC / SGC / TAG / EDGE，每档完整阶梯。
 - **诚实降级**：边框过窄、宽高比异常、满版卡——都明确告警，而不是给个假数字。
 - **零依赖前端**：`web-demo/index.html` 双击即用，含放大镜、可拖辅助线、实时比例。
-- **无网络调用**：没有模型下载，没有 API key，图片不出本机。
+- **缺陷判定可选**：默认纯离线（四角/边缘/表面标为「未评估」）；接上 DeepSeek API 后逐分区判定，单卡成本约 $0.001，无需 GPU 与本地模型。
 
 ---
 
@@ -164,6 +164,69 @@ python -m tests.test_scoring    # 评分引擎 6 项验收
 
 失败不会被吞掉——`render_pdf` 返回 `(ok, message)`，接口据此回 503 并说明原因。
 
+---
+
+## 缺陷判定：调 API，不装模型
+
+M2 原本的设计是本地 Ollama + Qwen2.5-VL-7B。实际接 DeepSeek 更划算：**`deepseek-flash` 原生支持图片输入**，一个 API key 就能跑，不用 GPU、不用下 5 GB 权重、不用守着机器。
+
+### 一个决定架构的数字
+
+官方文档写明：图片在推理前会被缩放到约 **1300×1300 等效**，单图最多计 **1024 token**。也就是说把 4000px 的原图整张丢进去，多出来的分辨率全被丢掉，钱还照付。
+
+所以送的不是整卡，而是**九张分区裁图**（默认 704 px）：
+
+| 送法 | 有效分辨率 | 单卡图片 token | 能不能看清 2mm 露白 |
+|---|---|---|---|
+| 整卡 4000px | 被压到 1300 等效 | 1024 | ❌ 角部只剩几十像素 |
+| 九分区 704px | 每张都不触发缩放 | 9 × ~700 | ✅ 角部占据画面主体 |
+
+成本量级：一张卡 9 张裁图约 6.3K 输入 + 0.5K 输出，按 off-peak 价（$0.15 / $0.60 每百万 token）约 **$0.0013**。一千张卡一块三。
+
+### 开起来
+
+```bash
+export CARD_VISION_PROVIDER=deepseek
+export DEEPSEEK_API_KEY=sk-...        # Windows: $env:DEEPSEEK_API_KEY='sk-...'
+
+python -m tests.vision_probe          # 只看会发什么，不花钱
+python -m tests.vision_probe --call   # 真跑一次，打印信号与 token
+```
+
+其余开关见 [`.env.example`](.env.example)。默认是 `none`：**不配就是离线**，报告里四角/边缘/表面显示为「—」。
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `CARD_VISION_PROVIDER` | `none` | `none` / `deepseek` |
+| `DEEPSEEK_API_KEY` | — | 只从环境读，不写日志、不入库 |
+| `CARD_VISION_MODEL` | `deepseek-flash` | `deepseek-v4-pro` 只支持文本，不能用于图片 |
+| `CARD_VISION_ZONE_SIZE` | `704` | 再大也会被缩到 1300 等效 |
+| `CARD_VISION_INCLUDE_BACK` | `0` | 背面送检成本翻倍 |
+| `CARD_VISION_CACHE_DIR` | `data/cache/vision` | 按裁图哈希缓存，重跑不再付费 |
+
+### 什么会离开本机
+
+只有**九张分区裁图**。原图、校正后的整卡、居中比例、复算用的边框坐标都不上传——居中永远是本地几何测量，模型无权过问。
+
+这条边界写在报告页脚里，不是只写在 README 里：
+
+> 视觉判定由 deepseek/deepseek-flash 完成：检查 9 个分区，得到 3 条信号；9 次请求 / 9 张图 / 6312 输入 + 482 输出 token，约 $0.0011。
+> 本报告的四角、边缘、表面由云端模型判定，9 张分区裁图已上传至 https://api.deepseek.com。居中比例仍为本地几何测量，未经上传。
+
+### 工程上必须处理的四件事
+
+1. **单区失败不能拖垮整卡。** 九个并发请求，总有一两个撞 429。失败的分区记为「未评估」，其余照常出报告，错误原文进警告列表。
+2. **JSON 模式会返回空白。** 官方文档明确：非 JSON 内容被替换成空格，`finish_reason` 仍是 `stop`。空内容当失败重试，不能当成"没有缺陷"。
+3. **缺陷名是闭集。** 模型只能从十个名字里选。返回 `worn corner` 这种自创词直接判失败——悄悄映射成 `corner_touch` 只会把问题藏起来。
+4. **缓存按裁图哈希。** 同一张卡重跑读本地 JSON，不产生费用；改了 prompt 版本号才重新请求。
+
+### 「未评估」不是「未检出」
+
+没开视觉判定时，四角/边缘/表面的 10 分是**默认值**，不是测量结果。报告里显示 `—`，摘要写「未评估」。跑了判定但确实没发现缺陷，才写「未检出」。
+
+同理，一个维度给出 10 分却带着缺陷信号时（模型允许轻微缺陷保留 10 档，与参考报告一致），报告会明说：
+
+> 这 1 条信号都在 10 档容差之内，子分保留 10 分：轻微缺陷扣分但不淘汰档位，请勿把 10 读成"无瑕"。
 
 ---
 
@@ -252,10 +315,16 @@ card-grading-engine/
 │   ├── centering_calculator.py    投影剖面找边 / 居中计算 / 等级映射
 │   └── grade_standards.py         六家阈值阶梯（数据与逻辑分离）
 ├── app/                           报告服务
+│   ├── config.py                  环境变量 → 运行配置（含视觉层开关）
 │   ├── defect_model.py            信号 / 分区 / 维度 / 报告 数据模型
 │   ├── scoring.py                 四层评分引擎
 │   ├── zone_splitter.py           九分区切图
-│   ├── pipeline.py                测量 + 评分 + 证据图
+│   ├── pipeline.py                测量 + 判定 + 评分 + 证据图
+│   ├── vision/                    缺陷判定层（可插拔）
+│   │   ├── deepseek.py            deepseek-flash 调用、重试、JSON 校验
+│   │   ├── prompts.py             逐分区提示词与缺陷闭集
+│   │   ├── runner.py              并发、缓存、部分失败隔离
+│   │   └── types.py               请求 / 发现 / 用量
 │   ├── report_render.py           Jinja2 → HTML → PDF
 │   ├── db.py                      SQLite 存档
 │   ├── main.py                    FastAPI 路由
@@ -269,6 +338,8 @@ card-grading-engine/
 │   ├── synthetic.py               合成卡生成（已知居中比例）
 │   ├── run_checks.py              精度自检
 │   ├── test_scoring.py            评分引擎 6 项验收
+│   ├── test_vision.py             视觉层 23 项验收（假 provider，不花钱）
+│   ├── vision_probe.py            视觉层探测：先看footprint，再决定是否付费
 │   └── render_demo.py             端到端渲染验收（HTML + PDF）
 └── examples/                      示例输出
 ```

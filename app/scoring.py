@@ -123,6 +123,18 @@ class ScoringConfig:
         return 0.0
 
     def quantise(self, value: float) -> float:
+        """Snap to the report grid, to **nearest**.
+
+        Rounding up is deliberate, and it is what the reference report does: it
+        lists a surface scratch and still awards Surface 10. A single hairline
+        defect does not disqualify the top tier — that is the tolerance policy
+        the whole threshold table encodes.
+
+        The honest-reporting burden therefore moves to the text: a dimension
+        that reports 10 while carrying signals must say so, which
+        ``report_render._zone_analysis`` does. Rounding *down* instead would
+        have looked stricter while quietly diverging from the observed model.
+        """
         step = self.round_step
         if step <= 0:
             return value
@@ -245,6 +257,8 @@ def build_report(
     config: ScoringConfig = DEFAULT_CONFIG,
     report_id: str | None = None,
     warnings: Sequence[str] = (),
+    model_version: str = "local-0.1",
+    assessed_dimensions: Sequence[str] = (),
 ) -> GradeReport:
     """Run all four layers and return a render-ready report.
 
@@ -317,6 +331,8 @@ def build_report(
         signals=list(signals),
         predictions=predict_institutions(overall, config),
         centering=dict(centering_metrics) if centering_metrics else None,
+        model_version=model_version,
         threshold_version=config.version,
         warnings=list(warnings),
+        assessed_dimensions=list(assessed_dimensions),
     )

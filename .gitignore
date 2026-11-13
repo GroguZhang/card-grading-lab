@@ -22,6 +22,11 @@ examples/demo_card_rectified.jpg
 # Local runtime data: uploads, evidence images, sqlite, rendered pdfs
 data/
 
+# Secrets — real keys must never be committed
+.env
+.env.local
+*.key
+
 # OS / editor
 .DS_Store
 Thumbs.db

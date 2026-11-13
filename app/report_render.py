@@ -191,6 +191,22 @@ def _count(signals: list[DefectSignal], category: Category, side: Side | None = 
     )
 
 
+def _tolerance_note(count: int, subgrade: float) -> str:
+    """Say out loud what "10 with one minor signal" actually means.
+
+    The scoring model rounds 9.85 up to 10, exactly as the reference report
+    does. Without this sentence the report would show a full bar next to a
+    defect row, which reads as "flawless" — the single most misleading thing a
+    grading report can imply.
+    """
+    if count == 0 or subgrade < 9.95:
+        return ""
+    return (
+        f"这 {count} 条信号都在 10 档容差之内，子分保留 {subgrade:g} 分："
+        "轻微缺陷扣分但不淘汰档位，请勿把 10 读成“无瑕”。"
+    )
+
+
 def _zone_analysis(report: GradeReport, has_vision: bool = True) -> list[dict[str, str]]:
     """One short paragraph per dimension, assembled from the same data.
 
@@ -237,7 +253,13 @@ def _zone_analysis(report: GradeReport, has_vision: bool = True) -> list[dict[st
             text = f"角部子分 <b>{corners.subgrade:g}</b>。" + (
                 "未检测到角部缺陷。" if has_vision else "本次未启用视觉判定，角部未做检查。"
             )
-        out.append({"label": _DIM_ZH["corners"], "grade": f"{corners.subgrade:g}", "text": text})
+        out.append(
+            {
+                "label": _DIM_ZH["corners"],
+                "grade": f"{corners.subgrade:g}",
+                "text": text + _tolerance_note(len(bad), corners.subgrade),
+            }
+        )
 
     edges = report.dimension("edges")
     if edges is not None:
@@ -247,22 +269,32 @@ def _zone_analysis(report: GradeReport, has_vision: bool = True) -> list[dict[st
             if n == 0 and has_vision
             else ("检出 {0} 处边缘缺陷。".format(n) if n else "本次未启用视觉判定，边缘未做检查。")
         )
-        out.append({"label": _DIM_ZH["edges"], "grade": f"{edges.subgrade:g}", "text": text})
+        out.append(
+            {
+                "label": _DIM_ZH["edges"],
+                "grade": f"{edges.subgrade:g}",
+                "text": text + _tolerance_note(n, edges.subgrade),
+            }
+        )
 
     surf = report.dimension("surface")
     if surf is not None:
         bad = [s for s in report.signals if s.category is Category.SURFACE]
         if bad:
             kinds = "、".join(sorted({_DEFECT_ZH.get(s.defect, s.defect) for s in bad}))
-            text = (
-                f"表面子分 <b>{surf.subgrade:g}</b>。检出 {len(bad)} 处{kinds}，"
-                "程度未到影响子分的量级。"
-            )
+            tail = "" if surf.subgrade >= 9.95 else "程度已影响子分。"
+            text = f"表面子分 <b>{surf.subgrade:g}</b>。检出 {len(bad)} 处{kinds}。{tail}"
         else:
             text = f"表面子分 <b>{surf.subgrade:g}</b>。" + (
                 "未检测到表面缺陷。" if has_vision else "本次未启用视觉判定，表面未做检查。"
             )
-        out.append({"label": _DIM_ZH["surface"], "grade": f"{surf.subgrade:g}", "text": text})
+        out.append(
+            {
+                "label": _DIM_ZH["surface"],
+                "grade": f"{surf.subgrade:g}",
+                "text": text + _tolerance_note(len(bad), surf.subgrade),
+            }
+        )
 
     return out
 
@@ -278,13 +310,18 @@ def _story_zh(report: GradeReport, has_vision: bool = True) -> str:
     front_n = _count(report.signals, cat, Side.FRONT)
     back_n = _count(report.signals, cat, Side.BACK)
 
-    strong = [
-        _DIM_ZH[d.dimension.value].split(" ")[0]
-        for d in report.dimensions
-        if d.dimension is not lf
-        and d.subgrade >= 9.95
-        and (d.dimension is Dimension.CENTERING or has_vision)
-    ]
+    strong: list[str] = []
+    for d in report.dimensions:
+        if d.dimension is lf or d.subgrade < 9.95:
+            continue
+        if d.dimension is not Dimension.CENTERING and not has_vision:
+            continue
+        label = _DIM_ZH[d.dimension.value].split(" ")[0]
+        n = _count(report.signals, _DIM_CAT[d.dimension.value])
+        if n:
+            # A 10 that carries signals is a tolerance result, not a clean sweep.
+            label += f"（{n} 条轻微信号未触及容差）"
+        strong.append(label)
 
     clauses: list[str] = []
     if strong:
@@ -308,12 +345,21 @@ def report_to_context(
     images = images or {}
     has_vision = any(s.source.value != "manual" for s in report.signals)
 
+    # "Looked and found nothing" beats "never looked": trust the explicit list
+    # when present, fall back to the presence of signals for older payloads.
+    assessed_dims = set(report.assessed_dimensions)
+    looked = bool(assessed_dims & {"corners", "edges", "surface"}) or has_vision
+
     dims = []
     for d in report.dimensions:
         # Centering always has evidence (geometry). The other three only have
-        # evidence when a signal was reported: with zero signals and no vision
-        # pass, a 10 is a default, not a finding — so it is shown as unscored.
-        assessed = d.dimension is Dimension.CENTERING or has_vision
+        # evidence when a pass ran: with zero signals and no pass, a 10 is a
+        # default, not a finding — so it is shown as unscored.
+        assessed = (
+            d.dimension is Dimension.CENTERING
+            or d.dimension.value in assessed_dims
+            or has_vision
+        )
         dims.append(
             {
                 "label": _DIM_ZH.get(d.dimension.value, d.dimension.label),
@@ -349,7 +395,7 @@ def report_to_context(
         if n:
             return f"{n} 处轻微", "warn"
         # Zero signals only means "clean" if something actually looked.
-        return ("未检出", "ok") if has_vision else ("未评估", "na")
+        return ("未检出", "ok") if looked else ("未评估", "na")
 
     cf, cfc = cell_text(Dimension.CORNERS, Side.FRONT)
     cb, cbc = cell_text(Dimension.CORNERS, Side.BACK)
@@ -431,14 +477,14 @@ def report_to_context(
             else None
         ),
         "signals": _format_signals(report.signals),
-        "story": _story_zh(report, has_vision),
-        "zone_analysis": _zone_analysis(report, has_vision),
+        "story": _story_zh(report, looked),
+        "zone_analysis": _zone_analysis(report, looked),
         "images": images,
         "warnings": [_warning_zh(w) for w in report.warnings],
         "model_version": report.model_version,
         "threshold_version": report.threshold_version,
         "generated_at": _dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "has_vision": has_vision,
+        "has_vision": looked,
         "unassessed": [d["label"] for d in dims if not d["assessed"]],
     }
 

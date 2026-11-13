@@ -31,6 +31,7 @@ __all__ = [
     "load_signal_pack",
     "analyze",
     "annotate_centering",
+    "vision_meta",
 ]
 
 
@@ -46,6 +47,7 @@ class AnalysisResult:
     crops: dict[str, ZoneCrop] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     evidence: dict[str, np.ndarray] = field(default_factory=dict)
+    vision: Any | None = None
 
 
 def signal_from_dict(raw: dict[str, Any]) -> DefectSignal:
@@ -122,12 +124,20 @@ def analyze(
     centering_override: dict[str, Any] | None = None,
     config: ScoringConfig = DEFAULT_CONFIG,
     make_evidence: bool = True,
+    vision: bool | None = None,
+    vision_settings: Any | None = None,
+    provider: Any | None = None,
 ) -> AnalysisResult:
     """Run geometry, then score whatever signals were supplied.
 
     ``centering_override`` lets a caller pass measured ratios instead of having
     the pipeline measure them — used by the fixture path so a report can be
     reproduced without the original photo.
+
+    ``vision`` controls the defect-detection model: ``None`` follows the
+    environment, ``False`` forces the offline path, ``True`` forces an attempt.
+    Explicit ``signals`` win over vision — a fixture must stay reproducible
+    without spending tokens.
     """
     notes: list[str] = []
     evidence: dict[str, np.ndarray] = {}
@@ -162,22 +172,65 @@ def analyze(
     else:
         metrics = _centering_metrics(front_rep, back_rep)
 
+    # ---- vision pass (optional, and never on top of explicit signals) ---- #
+    settings = vision_settings
+    if settings is None:
+        try:
+            from .config import settings_from_env
+
+            settings = settings_from_env()
+        except Exception:  # pragma: no cover - config must never break a report
+            settings = None
+
+    use_vision = settings is not None and settings.enabled if vision is None else bool(vision)
+    if settings is not None and not settings.ready:
+        use_vision = False
+        if vision:
+            notes.append("视觉判定已请求但未配置 API Key，四角/边缘/表面按未评估处理。")
+
+    zone_size = getattr(settings, "zone_size", 704) if use_vision else 384
+    crops: dict[str, ZoneCrop] = {}
+    try:
+        crops = split_both_sides(front_aligned, back_aligned, out_size=zone_size)
+    except Exception as exc:  # pragma: no cover - defensive
+        notes.append(f"zone split skipped: {exc}")
+
+    vision_result = None
+    all_signals: list[DefectSignal] = list(signals)
+    model_version = "local-0.1"
+
+    if use_vision and not signals and crops:
+        from .vision import build_provider, build_requests, findings_to_signals, inspect_zones
+
+        vision_result, vision_signals, vision_notes = _run_vision(
+            crops,
+            settings,
+            provider=provider,
+            build_provider=build_provider,
+            build_requests=build_requests,
+            inspect_zones=inspect_zones,
+        )
+        all_signals.extend(findings_to_signals(vision_signals))
+        notes.extend(vision_notes)
+        if vision_result is not None and vision_result.provider not in {"", "none"}:
+            model_version = f"{vision_result.provider}/{vision_result.model or settings.model}"
+
+    # Which dimensions can honestly claim to have been looked at. Centering is
+    # always measured; the other three only when a defect pass actually ran,
+    # even if that pass concluded "nothing here".
+    assessed = ["centering"]
+    if all_signals or (vision_result is not None and vision_result.zones_inspected):
+        assessed += ["corners", "edges", "surface"]
+
     report = build_report(
         card_name=card_name,
-        signals=signals,
+        signals=all_signals,
         centering_metrics=metrics or None,
         config=config,
         warnings=notes,
+        model_version=model_version,
+        assessed_dimensions=assessed,
     )
-
-    crops: dict[str, ZoneCrop] = {}
-    try:
-        crops = split_both_sides(
-            front_aligned,
-            back_aligned if back_aligned is not None else None,
-        )
-    except Exception as exc:  # pragma: no cover - defensive
-        notes.append(f"zone split skipped: {exc}")
 
     return AnalysisResult(
         report=report,
@@ -188,7 +241,79 @@ def analyze(
         crops=crops,
         notes=notes,
         evidence=evidence,
+        vision=vision_result,
     )
+
+
+def _run_vision(
+    crops: dict[str, ZoneCrop],
+    settings: Any,
+    *,
+    provider: Any,
+    build_provider: Any,
+    build_requests: Any,
+    inspect_zones: Any,
+) -> tuple[Any, list[Any], list[str]]:
+    """Isolated so a vision failure degrades to notes instead of a 500."""
+    notes: list[str] = []
+    try:
+        prov = provider or build_provider(settings)
+    except Exception as exc:  # noqa: BLE001
+        return None, [], [f"视觉判定未启动：{exc}"]
+
+    if prov is None:
+        return None, [], ["视觉判定未启动：提供方不可用，四角/边缘/表面按未评估处理。"]
+
+    reqs = build_requests(
+        crops,
+        max_zones=getattr(settings, "max_zones", 9),
+        include_back=getattr(settings, "include_back", False),
+    )
+    result = inspect_zones(
+        reqs,
+        prov,
+        concurrency=getattr(settings, "concurrency", 4),
+        cache_dir=getattr(settings, "cache_dir", None),
+    )
+
+    if result.findings or result.zones_inspected:
+        notes.append(
+            f"视觉判定由 {result.provider}/{result.model} 完成："
+            f"检查 {len(result.zones_inspected)} 个分区，得到 {len(result.findings)} 条信号；"
+            f"{result.usage.summary()}，约 ${result.usage.cost_usd():.4f}。"
+        )
+        notes.append(
+            f"本报告的四角、边缘、表面由云端模型判定，"
+            f"{len(result.zones_inspected)} 张分区裁图已上传至 {getattr(settings, 'base_url', 'API')}。"
+            "居中比例仍为本地几何测量，未经上传。"
+        )
+    for err in result.errors[:4]:
+        notes.append(f"分区判定失败（按未评估处理）：{err}")
+    return result, result.findings, notes
+
+
+
+def vision_meta(result: AnalysisResult) -> dict[str, Any] | None:
+    """Serialisable summary of the vision pass, including what it cost."""
+    v = result.vision
+    if v is None:
+        return None
+    return {
+        "provider": v.provider,
+        "model": v.model,
+        "zones_inspected": len(v.zones_inspected),
+        "findings": len(v.findings),
+        "usage": {
+            "requests": v.usage.requests,
+            "images": v.usage.images,
+            "prompt_tokens": v.usage.prompt_tokens,
+            "completion_tokens": v.usage.completion_tokens,
+            "cache_hits": v.usage.cache_hits,
+            "retries": v.usage.retries,
+        },
+        "cost_usd": round(v.usage.cost_usd(), 6),
+        "errors": v.errors[:5],
+    }
 
 
 def analyze_from_paths(

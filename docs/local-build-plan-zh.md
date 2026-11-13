@@ -117,30 +117,43 @@ CV 量化：白色像素占比？边缘粗糙度？对比度？
 
 ### 3.2 技术选型表
 
+> **实施更新（2026-11-14）**：M2 实际落地时改用了 **DeepSeek API**，不再依赖本地模型。
+> 原因是 `deepseek-flash` 已原生支持图片输入，成本约 **$0.0013/卡**，省掉 GPU、5 GB 权重与常驻服务。
+> 下方 Ollama 方案保留为**完全离线**的备选（无网/隐私要求更高的场景）。
+>
+> | 维度 | DeepSeek API（已实现） | 本地 Ollama（备选） |
+> |---|---|---|
+> | 依赖 | 一个 API key | GPU ≥ 6 GB + 5 GB 权重 |
+> | 单卡耗时 | 9 区并发，约 3–6 s | 串行约 40 s，并发约 10 s |
+> | 单卡成本 | ≈ $0.0013 | 电费可忽略 |
+> | 图片是否离开本机 | **是**（仅 9 张分区裁图） | 否 |
+> | 判定质量 | 明显更强（能读"2mm 弧形磨损"这类描述） | 7B 级，定位可用、分级偏弱 |
+
 | 环节 | 首选 | 备选 | 显存/依赖 | 选型理由 |
 |---|---|---|---|---|
-| VLM 运行时 | **Ollama** | llama.cpp / transformers+bitsandbytes | — | 一条命令起服务，模型管理省心 |
-| VLM 模型 | **Qwen2.5-VL-7B-Instruct (Q4_K_M)** | InternVL2.5-8B / MiniCPM-V 2.6 | ≈6 GB | 7B 在你的 4070(12G) 上留足余量；中文卡面文字识别好 |
+| 缺陷判定 | **DeepSeek `deepseek-flash`**（API） | Ollama + Qwen2.5-VL-7B | 一个 key / ≈6 GB | 免部署；原生图片输入；单卡亚分级成本 |
+| — 图片送入方式 | **九分区裁图 704px** | 整卡 | — | 单图计费上限 1024 token，整卡多出的分辨率会被缩掉 |
 | 几何/图像 | **OpenCV 4.x** | — | CPU | 已用于居中，无需新依赖 |
 | 亚像素量化 | **OpenCV + scikit-image** | — | CPU | 连通域、形态学、局部对比度都齐 |
 | 服务 | **FastAPI + uvicorn** | Flask | — | 自带 OpenAPI，前端好对接 |
 | 存储 | **SQLite** | — | — | 单机自用，零运维 |
 | 模板 | **Jinja2** | — | — | 复刻它的模板化文案 |
-| PDF | **Playwright (Chromium) `page.pdf()`** | WeasyPrint | ~300 MB 浏览器 | **直接复刻 iOS 打印那条链路**，CSS 即版式 |
+| PDF | **Playwright `page.pdf()` / 本机 Chrome** | WeasyPrint | 本机浏览器即可 | **直接复刻 iOS 打印那条链路**，CSS 即版式 |
 | 前端 | 现有 `web-demo` 扩展 | — | — | 已有测量交互，加报告页即可 |
 
 **关于模型的现实提醒**：
-- 模型名以 `ollama list` 或官方库为准（命名会随版本变化）。
-- 7B 模型判"轻微露白"的能力有限，它的价值在**定位候选**，不在精确分级——所以才有 §2.2 的 CV 裁决。
-- 如果只想先跑通流程，可以用 2B 级模型 + 更强的 CV，精度损失主要在语义层。
+- 模型能力决定的是**定位候选**，不是精确分级——所以才有 §2.2 的 CV 裁决。
+- 送图前先算账：整卡送进去 = 花 1024 token 换 1300px 等效，角部只剩几十像素；分区送才有毫米级细节。
+- 如果一定要离线，用 2B 级模型 + 更强 CV，精度损失主要在语义层。
 
 ### 3.3 硬件匹配
 
 | 机器 | 可行配置 | 预期速度 |
 |---|---|---|
-| RTX 4070 (12 GB) | Qwen2.5-VL-7B Q4，8 区串行 | 约 3–6 s/区，单卡约 40 s |
-| RTX 4080 (16 GB) | 7B FP8/AWQ，或 13B Q4；8 区可小批并发 | 约 1.5–3 s/区 |
-| 无 GPU（CPU） | MiniCPM-V 2.6 Q4 或纯 CV 模式 | 约 20–40 s/区，建议关掉语义层 |
+| **无 GPU / 笔记本** | **DeepSeek API 路线（推荐）** | 9 区并发，单卡 3–6 s |
+| RTX 4070 (12 GB) | 本地 Qwen2.5-VL-7B Q4，9 区串行 | 约 3–6 s/区，单卡约 40 s |
+| RTX 4080 (16 GB) | 7B FP8/AWQ，或 13B Q4；9 区可小批并发 | 约 1.5–3 s/区 |
+| 无 GPU + 必须离线 | MiniCPM-V 2.6 Q4 或纯 CV 模式 | 约 20–40 s/区 |
 
 ---
 
@@ -191,13 +204,17 @@ card-grading-engine/
 
 > 这一步的价值：**在接模型之前就把"输出长什么样"钉死**。后面所有工作都是往里填数据。
 
-### M2 · 语义层（2–3 天，需要 Ollama）
+### M2 · 语义层（已完成，DeepSeek API）
 
-- `zone_splitter.py`：按校正后的卡图切 8 区（带 20% 重叠，防止缺陷压在切口上）
-- `vlm_client.py`：逐区结构化提问，JSON schema 强约束，失败重试 2 次
-- 先跑单张卡，人工核对每区输出
+- `app/zone_splitter.py`：按校正后的卡图切 9 区（带 25% 外扩，防止缺陷压在切口上）
+- `app/vision/deepseek.py`：逐区提问，`response_format=json_object` 强约束，空内容重试
+- `app/vision/runner.py`：并发 + 裁图哈希缓存 + 单区失败隔离
+- `app/vision/prompts.py`：缺陷闭集（10 种）+ 严重度三档 + 明确"看不清就说空"
 
-**验收**：一张已知有角损的卡，8 区里至少 6 区判定与人工一致。
+**验收**：`python -m tests.test_vision` 23 项全过（假 provider，不花钱）；
+真实调用用 `python -m tests.vision_probe --call` 跑一张卡，核对分区判定与 token 用量。
+
+> 与原计划的差异：区数从 8 改为 9（把"画面中央"独立出来，表面缺陷才有归属）；模型从本地 7B 改为 API。
 
 ### M3 · 裁决与评分（2 天）
 
@@ -231,19 +248,28 @@ pip install fastapi "uvicorn[standard]" jinja2 playwright pillow
 playwright install chromium
 ```
 
-### 6.2 模型
+### 6.2 缺陷判定（二选一）
+
+**A. DeepSeek API（推荐，无需 GPU）**
 
 ```bash
-# 安装 Ollama 后
+export CARD_VISION_PROVIDER=deepseek
+export DEEPSEEK_API_KEY=sk-...      # Windows: $env:DEEPSEEK_API_KEY='sk-...'
+
+python -m tests.vision_probe         # 先看 footprint，不花钱
+python -m tests.vision_probe --call  # 真跑一张，核对信号与用量
+```
+
+**B. 本地 Ollama（完全离线，需要 ≥6 GB 显存）**
+
+```bash
 ollama pull qwen2.5vl:7b        # 名称以官方库为准
 ollama serve                     # 默认 127.0.0.1:11434
 ```
 
-验证：
-
-```bash
-ollama run qwen2.5vl:7b "描述这张图的左上角" -f test.jpg
-```
+> 当前代码只实现了 A（`app/vision/deepseek.py`）。接 B 只需再写一个满足
+> `app/vision/runner.py::VisionProvider` 协议的类（`inspect(req) -> (findings, usage)`），
+> 评分与渲染层完全不用改——这正是把判定层单独拆出来的原因。
 
 ### 6.3 启动
 

@@ -123,10 +123,17 @@ def split_both_sides(
     back: np.ndarray | None = None,
     **kwargs,
 ) -> dict[str, ZoneCrop]:
-    """Convenience wrapper producing ``{"front:top_left": ...}`` style keys."""
-    crops = split_zones(front, side="front", **kwargs)
-    if back is not None and back.size:
-        crops.update(split_zones(back, side="back", **kwargs))
+    """Convenience wrapper producing ``{"front:top_left": ...}`` style keys.
+
+    Keying by ``side:zone`` is not cosmetic: with plain zone names the back
+    crops silently overwrite the front ones, and every downstream step then
+    inspects the wrong side while believing it has both.
+    """
+    crops: dict[str, ZoneCrop] = {}
+    for side, card in (("front", front), ("back", back)):
+        if card is None or not getattr(card, "size", 0):
+            continue
+        crops.update({c.key: c for c in split_zones(card, side=side, **kwargs).values()})
     return crops
 
 

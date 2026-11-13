@@ -231,6 +231,12 @@ class GradeReport:
     threshold_version: str = "2026.11"
     warnings: list[str] = field(default_factory=list)
 
+    #: Dimensions that were actually inspected. Empty means "infer from the
+    #: signals", which is right for the offline path but wrong for a vision run
+    #: that looked and found nothing — "clean" and "not looked at" are different
+    #: claims and the report must not conflate them.
+    assessed_dimensions: list[str] = field(default_factory=list)
+
     # -- derived --------------------------------------------------------- #
     @property
     def subgrades(self) -> dict[str, float]:
@@ -296,4 +302,5 @@ class GradeReport:
             "model_version": self.model_version,
             "threshold_version": self.threshold_version,
             "warnings": list(self.warnings),
+            "assessed_dimensions": list(self.assessed_dimensions),
         }

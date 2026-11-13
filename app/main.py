@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import ROOT
 from .db import Database, default_db_path
-from .pipeline import AnalysisResult, analyze, load_signal_pack
+from .pipeline import AnalysisResult, analyze, load_signal_pack, vision_meta
 from .report_render import ReportRenderer, _data_uri
 
 app = FastAPI(title="Card Grading Engine", version="0.1.0")
@@ -85,8 +85,15 @@ def _persist(result: AnalysisResult) -> tuple[str, dict[str, str]]:
         cv2.imwrite(str(ev_path), result.evidence["centering_front"])
         images["centering_front"] = _data_uri(result.evidence["centering_front"], 90)
 
+    # Store the vision accounting alongside the report so /api/report/{id} can
+    # answer "which model judged this, and what did it cost" after the fact.
+    payload = result.report.to_dict()
+    meta = vision_meta(result)
+    if meta is not None:
+        payload["vision"] = meta
+
     db.save_report(
-        result.report.to_dict(),
+        payload,
         front_image=front_path.relative_to(ROOT).as_posix(),
         back_image=back_path.relative_to(ROOT).as_posix() if back_path else None,
         evidence_image=ev_path.relative_to(ROOT).as_posix() if ev_path else None,
@@ -100,6 +107,7 @@ def _build_and_store(
     card_name: str,
     signals,
     centering_override: dict[str, Any] | None = None,
+    use_vision: bool | None = None,
 ) -> tuple[str, dict[str, str], AnalysisResult]:
     result = analyze(
         front,
@@ -107,35 +115,58 @@ def _build_and_store(
         card_name=card_name,
         signals=signals,
         centering_override=centering_override,
+        vision=use_vision,
     )
     rid, images = _persist(result)
     return rid, images, result
 
 
+def _parse_switch(raw: str | None) -> bool | None:
+    """Tri-state form field: absent = follow the environment."""
+    if raw is None or raw.strip() == "":
+        return None
+    return raw.strip().lower() in {"1", "true", "on", "yes"}
+
+
 # --------------------------------------------------------------------------- #
 # pages
 # --------------------------------------------------------------------------- #
-INDEX = """
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+_INDEX_CSS = """
+body{background:#0b0d11;color:#e7ecf3;font-family:system-ui,"Microsoft YaHei",sans-serif;margin:0;padding:48px}
+.wrap{max-width:780px;margin:0 auto}
+h1{font-size:20px;margin-bottom:6px}
+p{color:#8a95a5;font-size:13px;line-height:1.8}
+.card{background:#12161d;border:1px solid #232a35;border-radius:12px;padding:20px;margin-top:22px}
+a{color:#f5c451}
+code{background:#1b212b;padding:2px 6px;border-radius:4px;font-size:12px}
+form{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+input,select,button{font:inherit;padding:9px 12px;border-radius:8px;border:1px solid #232a35;background:#171c25;color:#e7ecf3}
+button{background:#f5c451;color:#111;font-weight:600;cursor:pointer;border:none}
+.state{font-size:12px;font-family:ui-monospace,Consolas,monospace}
+.state.on{color:#4ade80}
+.state.off{color:#8a95a5}
+"""
+
+
+def _index_page(vision_state: str, vision_cls: str) -> str:
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <title>Card Grading Engine</title>
-<style>
-body{{background:#0b0d11;color:#e7ecf3;font-family:system-ui,sans-serif;margin:0;padding:48px}}
-.wrap{{max-width:760px;margin:0 auto}}
-h1{{font-size:20px;margin-bottom:6px}} p{{color:#8a95a5;font-size:13px;line-height:1.8}}
-.card{{background:#12161d;border:1px solid #232a35;border-radius:12px;padding:20px;margin-top:22px}}
-a{{color:#f5c451}} code{{background:#1b212b;padding:2px 6px;border-radius:4px;font-size:12px}}
-form{{display:flex;flex-direction:column;gap:10px;margin-top:14px}}
-input,button{{font:inherit;padding:9px 12px;border-radius:8px;border:1px solid #232a35;background:#171c25;color:#e7ecf3}}
-button{{background:#f5c451;color:#111;font-weight:600;cursor:pointer;border:none}}
-</style></head><body><div class="wrap">
+<style>{_INDEX_CSS}</style></head><body><div class="wrap">
 <h1>Card Grading Engine</h1>
-<p>本地评分报告服务。上传正反面照片生成 HTML / PDF 报告；图片不出本机。</p>
+<p>本地评分报告服务。默认<b>不上传任何图片</b>：居中由本地几何测量，四角/边缘/表面标记为「未评估」。
+启用云端判定后，只有九张分区裁图会发送到 DeepSeek，原图与居中几何数据不出本机。</p>
+<p class="state {vision_cls}">视觉判定：{vision_state}</p>
 <div class="card">
   <b>上传评分</b>
   <form method="post" action="/api/grade" enctype="multipart/form-data">
     <input type="text" name="card_name" placeholder="卡名，如 Stephen Curry">
     <input type="file" name="front" accept="image/*" required>
     <input type="file" name="back" accept="image/*">
+    <select name="use_vision">
+      <option value="">视觉判定：跟随服务端配置</option>
+      <option value="1">视觉判定：本次强制开启（上传 9 张分区图，约 $0.001）</option>
+      <option value="0">视觉判定：本次强制关闭（纯离线）</option>
+    </select>
     <button type="submit">生成报告</button>
   </form>
 </div>
@@ -154,7 +185,10 @@ button{{background:#f5c451;color:#111;font-weight:600;cursor:pointer;border:none
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
-    return INDEX
+    from .vision import get_settings
+
+    st = get_settings()
+    return _index_page(st.describe(), "on" if st.ready else "off")
 
 
 # --------------------------------------------------------------------------- #
@@ -166,6 +200,7 @@ async def grade(
     back: UploadFile | None = File(None),
     card_name: str = Form("Untitled card"),
     signals_json: str | None = Form(None),
+    use_vision: str | None = Form(None),
 ) -> JSONResponse:
     img_front = _read_upload(front)
     if img_front is None:
@@ -173,7 +208,9 @@ async def grade(
     img_back = _read_upload(back)
     signals = _parse_signals(signals_json)
 
-    rid, _, result = _build_and_store(img_front, img_back, card_name, signals)
+    rid, _, result = _build_and_store(
+        img_front, img_back, card_name, signals, use_vision=_parse_switch(use_vision)
+    )
     return JSONResponse(
         {
             "report_id": rid,
@@ -187,6 +224,7 @@ async def grade(
                 if result.report.limiting_factor
                 else None
             ),
+            "vision": vision_meta(result),
         }
     )
 
@@ -316,6 +354,9 @@ def report_html(report_id: str) -> HTMLResponse:
         predictions={k: float(v) for k, v in payload.get("predictions", {}).items()},
         centering=payload.get("centering"),
         warnings=payload.get("warnings", []),
+        model_version=payload.get("model_version", "local-0.1"),
+        threshold_version=payload.get("threshold_version", "2026.11"),
+        assessed_dimensions=payload.get("assessed_dimensions", []),
     )
 
     images: dict[str, str] = {}
