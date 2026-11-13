@@ -1,0 +1,883 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Card Centering Lab — 球星卡居中测量</title>
+<style>
+  :root{
+    --bg:#0b0d11; --panel:#12161d; --panel2:#171c25; --line:#232a35;
+    --text:#e7ecf3; --dim:#8a95a5; --dim2:#5d6775;
+    --amber:#f5c451; --green:#4ade80; --red:#f87171; --cyan:#38bdf8;
+    --radius:10px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    --mono:"SF Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--font);
+    display:flex; flex-direction:column; overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    padding:12px 18px; border-bottom:1px solid var(--line); background:var(--panel);
+  }
+  header h1{font-size:15px; font-weight:650; letter-spacing:.02em}
+  header h1 span{color:var(--amber)}
+  .tag{
+    font-size:11px; color:var(--dim); border:1px solid var(--line);
+    padding:2px 7px; border-radius:99px;
+  }
+  .spacer{flex:1}
+  button{
+    font-family:inherit; font-size:12.5px; color:var(--text); cursor:pointer;
+    background:var(--panel2); border:1px solid var(--line); border-radius:7px;
+    padding:7px 13px; transition:.15s border-color,.15s background,.15s color;
+  }
+  button:hover{border-color:#3a4657; background:#1d2430}
+  button.primary{background:var(--amber); color:#111; border-color:var(--amber); font-weight:600}
+  button.primary:hover{background:#ffd66b}
+  button:disabled{opacity:.4; cursor:not-allowed}
+
+  main{flex:1; display:grid; grid-template-columns:1fr 336px; min-height:0}
+
+  .stage{position:relative; overflow:hidden; background:
+    radial-gradient(circle at 50% 40%,#151a22 0%,#0b0d11 70%);}
+  #view{display:block; width:100%; height:100%; cursor:crosshair}
+  #view.dragging{cursor:grabbing}
+
+  #drop{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px; text-align:center;
+    color:var(--dim); padding:32px; pointer-events:none;
+  }
+  #drop.hide{display:none}
+  #drop .ring{
+    width:74px; height:74px; border:1.5px dashed #2f3a4a; border-radius:18px;
+    display:grid; place-items:center; color:#4b5566;
+  }
+  #drop b{color:var(--text); font-size:15px; font-weight:600}
+  #drop small{font-size:12px; line-height:1.7}
+
+  #loupe{
+    position:absolute; width:168px; height:168px; border-radius:50%;
+    border:2px solid #38445a; box-shadow:0 8px 32px rgba(0,0,0,.65);
+    pointer-events:none; display:none; background:#000;
+    image-rendering:pixelated;
+  }
+  #loupe.on{display:block}
+
+  aside{
+    border-left:1px solid var(--line); background:var(--panel);
+    display:flex; flex-direction:column; overflow-y:auto;
+  }
+  .block{padding:16px 18px; border-bottom:1px solid var(--line)}
+  .block h2{
+    font-size:10.5px; font-weight:650; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--dim2); margin-bottom:12px;
+  }
+
+  .ratio{display:flex; align-items:baseline; gap:10px; margin-bottom:6px}
+  .ratio .k{width:34px; font-size:11px; color:var(--dim); letter-spacing:.06em}
+  .ratio .v{font-family:var(--mono); font-size:26px; font-weight:600; letter-spacing:-.02em}
+  .ratio .v.worst{color:var(--amber)}
+  .ratio .mm{font-size:11px; color:var(--dim2); font-family:var(--mono)}
+
+  .verdict{
+    margin-top:12px; padding:10px 12px; border-radius:8px;
+    background:var(--panel2); border:1px solid var(--line);
+    font-size:12px; line-height:1.6; color:var(--dim);
+  }
+  .verdict b{color:var(--text)}
+  .verdict.warn{border-color:#5c4a1e; background:#241d0f; color:#e8c98a}
+  .verdict.bad{border-color:#5c2626; background:#241111; color:#f0a0a0}
+
+  table.grades{width:100%; border-collapse:collapse}
+  table.grades th,table.grades td{
+    text-align:left; padding:7px 0; font-size:12.5px;
+    border-bottom:1px solid #1b212b;
+  }
+  table.grades th{font-size:10.5px; color:var(--dim2); font-weight:600;
+    letter-spacing:.08em; text-transform:uppercase; padding-bottom:8px}
+  table.grades td:first-child{color:var(--dim); font-weight:600; letter-spacing:.03em}
+  table.grades td.grade{font-family:var(--mono); font-weight:600; text-align:right}
+  table.grades tr.gem td.grade{color:var(--green)}
+  table.grades tr.near td.grade{color:var(--amber)}
+  table.grades tr.low td.grade{color:var(--dim)}
+  table.grades td.limit{text-align:right; color:var(--dim2); font-family:var(--mono); font-size:11px}
+
+  .rows{display:flex; flex-direction:column; gap:10px}
+  .row{display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--dim)}
+  .row label{display:flex; align-items:center; gap:8px; cursor:pointer}
+  input[type=checkbox]{appearance:none; width:32px; height:18px; border-radius:99px;
+    background:#2a3240; position:relative; cursor:pointer; transition:.18s}
+  input[type=checkbox]:checked{background:var(--amber)}
+  input[type=checkbox]::after{content:""; position:absolute; top:2px; left:2px;
+    width:14px; height:14px; border-radius:50%; background:#0b0d11; transition:.18s}
+  input[type=checkbox]:checked::after{left:16px}
+
+  .keys{font-size:11px; line-height:1.9; color:var(--dim2)}
+  .keys kbd{
+    font-family:var(--mono); font-size:10.5px; background:#1b2230; color:var(--dim);
+    border:1px solid #2a3342; border-bottom-width:2px; border-radius:4px;
+    padding:1px 5px; margin-right:4px;
+  }
+  .foot{margin-top:auto; padding:14px 18px; font-size:10.5px; line-height:1.65; color:var(--dim2)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Card <span>Centering</span> Lab</h1>
+  <span class="tag">零依赖 · 纯前端</span>
+  <div class="spacer"></div>
+  <button id="btnOpen">打开图片</button>
+  <button id="btnDetect" disabled>自动检测</button>
+  <button id="btnReset" disabled>重置</button>
+</header>
+
+<main>
+  <section class="stage" id="stage">
+    <canvas id="view"></canvas>
+    <canvas id="loupe"></canvas>
+    <div id="drop">
+      <div class="ring">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15l5-4 4 3 3-2 6 4"/>
+        </svg>
+      </div>
+      <b>拖入 / 粘贴卡片照片</b>
+      <small>或点击「打开图片」。平拍、去套、纯色背景效果最佳。<br>
+      加载后可拖动四个角点拉正透视，再拖虚线量边框。</small>
+    </div>
+  </section>
+
+  <aside>
+    <div class="block">
+      <h2>测量结果</h2>
+      <div class="ratio"><span class="k">L / R</span>
+        <span class="v" id="vLR">—</span><span class="mm" id="mmLR"></span></div>
+      <div class="ratio"><span class="k">T / B</span>
+        <span class="v" id="vTB">—</span><span class="mm" id="mmTB"></span></div>
+      <div class="verdict" id="verdict">上传一张卡片照片开始测量。</div>
+    </div>
+
+    <div class="block">
+      <h2>预测等级（正面）</h2>
+      <table class="grades">
+        <thead><tr><th>机构</th><th class="limit" style="text-align:right">容差</th><th style="text-align:right">等级</th></tr></thead>
+        <tbody id="gradeBody"></tbody>
+      </table>
+    </div>
+
+    <div class="block">
+      <h2>显示</h2>
+      <div class="rows">
+        <div class="row"><label><input type="checkbox" id="optLoupe" checked> 放大镜</label>
+          <span id="zoomInfo" class="mm" style="font-family:var(--mono);font-size:11px;color:var(--dim2)">—</span></div>
+        <div class="row"><label><input type="checkbox" id="optQuad" checked> 透视角点</label></div>
+        <div class="row"><label><input type="checkbox" id="optMM" checked> 毫米读数</label></div>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2>操作</h2>
+      <div class="keys">
+        <kbd>拖拽</kbd>移动角点 / 测量线<br>
+        <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>微调 1 px<br>
+        <kbd>Shift</kbd>+方向键 微调 10 px<br>
+        <kbd>Tab</kbd>切换选中的线<br>
+        <kbd>滚轮</kbd>缩放视图 · <kbd>空格</kbd>拖动画布
+      </div>
+    </div>
+
+    <div class="foot">
+      测量在你的浏览器里完成，图片不会上传。<br>
+      结果为评级前预筛参考，非官方评级。
+    </div>
+  </aside>
+</main>
+
+<input type="file" id="file" accept="image/*" hidden>
+
+<script>
+(() => {
+'use strict';
+
+/* ─────────────────────────── 常量 ─────────────────────────── */
+const CARD_W_MM = 63.5, CARD_H_MM = 88.9;
+const CARD_ASPECT = CARD_W_MM / CARD_H_MM;
+
+// 每档 = 允许的「较宽一侧」占边框总宽的最大百分比。55 即 55/45。
+const STANDARDS = {
+  PSA: { label:'PSA',  front:[['10',55],['9',60],['8',65],['7',70],['6',80],['5',85],['4',85],['3',90],['2',90],['1',90]] },
+  BGS: { label:'BGS',  front:[['10',50],['9.5',55],['9',55],['8',60],['7',65],['6',70],['5',75],['4',80],['3',85],['2',90],['1',100]] },
+  CGC: { label:'CGC',  front:[['10',55],['9.5',55],['9',60],['8',65],['7',70],['6',75],['5',80],['4',85],['3',90],['2',90],['1',90]] },
+  SGC: { label:'SGC',  front:[['10 P',50],['10',55],['9',60],['8',65],['7',70],['6',75],['5',80],['4',85],['3',90],['2',90],['1',90]] },
+  TAG: { label:'TAG',  front:[['10P',51],['10',55],['9',60],['8.5',63],['8',65],['7.5',68],['7',70],['6.5',73],['6',75],['5.5',78],['5',80],['4.5',83],['4',85],['3.5',88],['3',90],['2.5',93],['2',95],['1.5',98]] },
+};
+
+const VERTICAL = new Set(['outL','inL','inR','outR']);
+const HANDLE_LABEL = {
+  outL:'外左', inL:'内左', inR:'内右', outR:'外右',
+  outT:'外上', inT:'内上', inB:'内下', outB:'外下',
+};
+const ORDER = ['outL','inL','inR','outR','outT','inT','inB','outB'];
+
+/* ─────────────────────────── 状态 ─────────────────────────── */
+const S = {
+  img:null,
+  quad:[],                       // 4 个图像坐标角点，顺序 TL TR BR BL
+  lines:{},                      // 8 条线的图像坐标（垂直线存 x，水平线存 y）
+  view:{ scale:1, tx:0, ty:0 },
+  drag:null,                     // {kind:'corner'|'line', key, index}
+  hover:null,
+  active:'inL',
+  pointer:{ x:0, y:0, inside:false },
+  measure:null,
+};
+
+/* ─────────────────────────── DOM ─────────────────────────── */
+const $ = id => document.getElementById(id);
+const view = $('view'), vctx = view.getContext('2d');
+const loupe = $('loupe'), lctx = loupe.getContext('2d');
+const stage = $('stage');
+
+/* ─────────────────────────── 几何工具 ─────────────────────────── */
+const clamp = (v,a,b) => v<a?a:v>b?b:v;
+const lerp = (p,q,t) => ({ x:p.x+(q.x-p.x)*t, y:p.y+(q.y-p.y)*t });
+
+function toScreen(p){ return { x:p.x*S.view.scale+S.view.tx, y:p.y*S.view.scale+S.view.ty }; }
+function toImage(sx,sy){ return { x:(sx-S.view.tx)/S.view.scale, y:(sy-S.view.ty)/S.view.scale }; }
+
+/** 解 8×8 线性方程组（高斯消元，列主元） */
+function solve(A,b){
+  const n=b.length;
+  for(let i=0;i<n;i++){
+    let p=i;
+    for(let r=i+1;r<n;r++) if(Math.abs(A[r][i])>Math.abs(A[p][i])) p=r;
+    if(Math.abs(A[p][i])<1e-12) return null;
+    [A[i],A[p]]=[A[p],A[i]]; [b[i],b[p]]=[b[p],b[i]];
+    for(let r=i+1;r<n;r++){
+      const f=A[r][i]/A[i][i];
+      if(!f) continue;
+      for(let c=i;c<n;c++) A[r][c]-=f*A[i][c];
+      b[r]-=f*b[i];
+    }
+  }
+  const x=new Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){
+    let s=b[i];
+    for(let c=i+1;c<n;c++) s-=A[i][c]*x[c];
+    x[i]=s/A[i][i];
+  }
+  return x;
+}
+
+/**
+ * 由 4 组点对求单应矩阵 H，使 dst ≈ H · src。
+ * 返回 3×3 行主序数组；退化时返回 null。
+ */
+function homography(src,dst){
+  const A=[],b=[];
+  for(let i=0;i<4;i++){
+    const {x,y}=src[i], {x:u,y:v}=dst[i];
+    A.push([x,y,1,0,0,0,-u*x,-u*y]); b.push(u);
+    A.push([0,0,0,x,y,1,-v*x,-v*y]); b.push(v);
+  }
+  const h=solve(A,b);
+  return h ? [h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],1] : null;
+}
+
+function applyH(H,p){
+  const w=H[6]*p.x+H[7]*p.y+H[8];
+  if(Math.abs(w)<1e-9) return {x:NaN,y:NaN};
+  return { x:(H[0]*p.x+H[1]*p.y+H[2])/w, y:(H[3]*p.x+H[4]*p.y+H[5])/w };
+}
+
+/** 一条测量线与卡片四边形的两个交点（让线跟着透视走，而不是横平竖直） */
+function lineEnds(key){
+  const q=S.quad, v=S.lines[key];
+  if(VERTICAL.has(key)){
+    const x=v;
+    const tTop = Math.abs(q[1].x-q[0].x)>1e-6 ? clamp((x-q[0].x)/(q[1].x-q[0].x),0,1) : .5;
+    const tBot = Math.abs(q[2].x-q[3].x)>1e-6 ? clamp((x-q[3].x)/(q[2].x-q[3].x),0,1) : .5;
+    return [ lerp(q[0],q[1],tTop), lerp(q[3],q[2],tBot) ];
+  }
+  const y=v;
+  const tL = Math.abs(q[3].y-q[0].y)>1e-6 ? clamp((y-q[0].y)/(q[3].y-q[0].y),0,1) : .5;
+  const tR = Math.abs(q[2].y-q[1].y)>1e-6 ? clamp((y-q[1].y)/(q[2].y-q[1].y),0,1) : .5;
+  return [ lerp(q[0],q[3],tL), lerp(q[1],q[2],tR) ];
+}
+
+/* ─────────────────────────── 测量核心 ─────────────────────────── */
+/**
+ * 把 8 条线经单应映射到「卡片被拉成矩形」的坐标空间，再算比例。
+ * 这样即使卡片在照片里是梯形，测出的仍是真实居中——这是三个竞品里
+ * 只有 Centering Check 做到的事。
+ */
+function measure(){
+  if(!S.img) return null;
+
+  const W=1000, H=W/CARD_ASPECT;
+  const dst=[{x:0,y:0},{x:W,y:0},{x:W,y:H},{x:0,y:H}];
+  const Hm=homography(S.quad,dst);
+
+  const pos={};
+  for(const key of ORDER){
+    const [p1,p2]=lineEnds(key);
+    if(Hm){
+      const a=applyH(Hm,p1), c=applyH(Hm,p2);
+      pos[key]= VERTICAL.has(key) ? (a.x+c.x)/2 : (a.y+c.y)/2;
+    }else{
+      pos[key]= S.lines[key];   // 退化回退：直接用原始像素
+    }
+  }
+
+  const left  = Math.abs(pos.inL - pos.outL);
+  const right = Math.abs(pos.outR - pos.inR);
+  const top   = Math.abs(pos.inT - pos.outT);
+  const bot   = Math.abs(pos.outB - pos.inB);
+
+  const lrTotal=left+right, tbTotal=top+bot;
+  if(lrTotal<1e-6||tbTotal<1e-6) return null;
+
+  const leftPct=left/lrTotal*100, rightPct=100-leftPct;
+  const topPct=top/tbTotal*100,  botPct=100-topPct;
+
+  const spanX=Math.abs(pos.outR-pos.outL)||1;
+  const spanY=Math.abs(pos.outB-pos.outT)||1;
+
+  return {
+    leftPct,rightPct,topPct,botPct,
+    leftMM:left/spanX*CARD_W_MM, rightMM:right/spanX*CARD_W_MM,
+    topMM:top/spanY*CARD_H_MM,   botMM:bot/spanY*CARD_H_MM,
+    worst:Math.max(leftPct,rightPct,topPct,botPct),
+    worstAxis:(Math.max(leftPct,rightPct)>=Math.max(topPct,botPct))?'L/R':'T/B',
+    fullBleed: lrTotal<3 || tbTotal<3,
+  };
+}
+
+function gradeFor(pct, ladder){
+  for(const [label,limit] of ladder) if(pct<=limit+1e-9) return {label,limit};
+  return {label:ladder[ladder.length-1][0],limit:ladder[ladder.length-1][1]};
+}
+
+/* ─────────────────────────── 渲染 ─────────────────────────── */
+function resize(){
+  const dpr=window.devicePixelRatio||1;
+  const r=stage.getBoundingClientRect();
+  view.width=Math.round(r.width*dpr); view.height=Math.round(r.height*dpr);
+  view.style.width=r.width+'px'; view.style.height=r.height+'px';
+  vctx.setTransform(dpr,0,0,dpr,0,0);
+  fitView();
+  draw();
+}
+
+function fitView(){
+  if(!S.img) return;
+  const r=stage.getBoundingClientRect();
+  const pad=44;
+  const s=Math.min((r.width-pad*2)/S.img.width,(r.height-pad*2)/S.img.height);
+  S.view.scale=s;
+  S.view.tx=(r.width-S.img.width*s)/2;
+  S.view.ty=(r.height-S.img.height*s)/2;
+}
+
+function draw(){
+  const dpr=window.devicePixelRatio||1;
+  const w=view.width/dpr, h=view.height/dpr;
+  vctx.clearRect(0,0,w,h);
+  if(!S.img) return;
+
+  const {scale,tx,ty}=S.view;
+  vctx.save();
+  vctx.setTransform(dpr,0,0,dpr,0,0);
+  vctx.translate(tx,ty); vctx.scale(scale,scale);
+  vctx.imageSmoothingEnabled = scale < 1.6;
+  vctx.drawImage(S.img,0,0);
+
+  // 卡片外框（透视四边形）
+  if($('optQuad').checked){
+    vctx.beginPath();
+    S.quad.forEach((p,i)=> i? vctx.lineTo(p.x,p.y) : vctx.moveTo(p.x,p.y));
+    vctx.closePath();
+    vctx.strokeStyle='rgba(56,189,248,.75)';
+    vctx.lineWidth=1.5/scale;
+    vctx.setLineDash([]);
+    vctx.stroke();
+  }
+  vctx.restore();
+
+  // 测量线（屏幕空间绘制，保证线宽恒定）
+  vctx.save();
+  vctx.setTransform(dpr,0,0,dpr,0,0);
+  for(const key of ORDER){
+    const [p1,p2]=lineEnds(key);
+    const a=toScreen(p1), b=toScreen(p2);
+    const isOuter=key.startsWith('out');
+    const isActive=S.active===key;
+    const isHover=S.hover===key;
+
+    vctx.beginPath();
+    vctx.moveTo(a.x,a.y); vctx.lineTo(b.x,b.y);
+    vctx.setLineDash(isOuter?[]:[5,4]);
+    vctx.lineWidth=isActive?2:1.25;
+    vctx.strokeStyle=isActive? '#f5c451'
+      : isOuter? 'rgba(245,196,81,.42)' : 'rgba(74,222,128,.42)';
+    if(isHover&&!isActive) vctx.strokeStyle='rgba(255,255,255,.75)';
+    vctx.stroke();
+    vctx.setLineDash([]);
+
+    // 手柄
+    const mid={ x:(a.x+b.x)/2, y:(a.y+b.y)/2 };
+    const r=isActive?7:5;
+    vctx.beginPath();
+    vctx.arc(mid.x,mid.y,r,0,Math.PI*2);
+    vctx.fillStyle=isActive?'#f5c451':(isOuter?'rgba(245,196,81,.85)':'rgba(74,222,128,.85)');
+    vctx.fill();
+    vctx.lineWidth=2;
+    vctx.strokeStyle='#0b0d11';
+    vctx.stroke();
+
+    if(isActive){
+      vctx.font='600 11px system-ui, sans-serif';
+    }
+  }
+
+  // 角点
+  if($('optQuad').checked){
+    S.quad.forEach((p,i)=>{
+      const s=toScreen(p);
+      const hot=S.drag&&S.drag.kind==='corner'&&S.drag.index===i;
+      vctx.beginPath();
+      vctx.arc(s.x,s.y,hot?9:7,0,Math.PI*2);
+      vctx.fillStyle=hot?'#38bdf8':'rgba(56,189,248,.9)';
+      vctx.fill();
+      vctx.lineWidth=2; vctx.strokeStyle='#0b0d11'; vctx.stroke();
+      vctx.beginPath();
+      vctx.arc(s.x,s.y,2,0,Math.PI*2);
+      vctx.fillStyle='#0b0d11'; vctx.fill();
+    });
+  }
+  vctx.restore();
+}
+
+/* ─────────────────────────── 放大镜 ─────────────────────────── */
+function drawLoupe(sx,sy){
+  if(!$('optLoupe').checked||!S.pointer.inside||!S.img){ loupe.classList.remove('on'); return; }
+  const p=toImage(sx,sy);
+  if(p.x<0||p.y<0||p.x>S.img.width||p.y>S.img.height){ loupe.classList.remove('on'); return; }
+
+  loupe.classList.add('on');
+  const dpr=window.devicePixelRatio||1;
+  const size=168;
+  loupe.width=size*dpr; loupe.height=size*dpr;
+  lctx.setTransform(dpr,0,0,dpr,0,0);
+  lctx.imageSmoothingEnabled=false;
+  lctx.clearRect(0,0,size,size);
+
+  // 取样窗口：14 源像素铺满 168 px → 12× 放大
+  const srcSize=14, half=srcSize/2;
+  const zoom=size/srcSize;
+  lctx.drawImage(S.img, p.x-half, p.y-half, srcSize, srcSize, 0,0,size,size);
+
+  // 像素网格（每 1 源像素 = 12 屏像素）
+  lctx.strokeStyle='rgba(255,255,255,.08)';
+  lctx.lineWidth=1;
+  for(let i=1;i<srcSize;i++){
+    const t=i*zoom;
+    lctx.beginPath(); lctx.moveTo(t,0); lctx.lineTo(t,size); lctx.stroke();
+    lctx.beginPath(); lctx.moveTo(0,t); lctx.lineTo(size,t); lctx.stroke();
+  }
+
+  // 十字准星：标出当前线到最近整像素的偏差
+  const cx=Math.round(p.x), cy=Math.round(p.y);
+  const gx=(cx-(p.x-half))*zoom, gy=(cy-(p.y-half))*zoom;
+  lctx.strokeStyle='rgba(245,196,81,.55)';
+  lctx.lineWidth=1;
+  lctx.beginPath(); lctx.moveTo(gx,0); lctx.lineTo(gx,size); lctx.stroke();
+  lctx.beginPath(); lctx.moveTo(0,gy); lctx.lineTo(size,gy); lctx.stroke();
+
+  lctx.strokeStyle='rgba(248,113,113,.9)';
+  lctx.beginPath(); lctx.arc(size/2,size/2,3,0,Math.PI*2); lctx.stroke();
+
+  const r=stage.getBoundingClientRect();
+  let lx=sx+28, ly=sy-size-20;
+  if(lx+size>r.width) lx=sx-size-28;
+  if(ly<8) ly=sy+24;
+  loupe.style.left=lx+'px'; loupe.style.top=ly+'px';
+}
+
+/* ─────────────────────────── 命中测试 ─────────────────────────── */
+function hitTest(sx,sy){
+  const r=stage.getBoundingClientRect();
+  const local={x:sx-r.left,y:sy-r.top};
+
+  if($('optQuad').checked){
+    for(let i=0;i<4;i++){
+      const s=toScreen(S.quad[i]);
+      if(Math.hypot(s.x-local.x,s.y-local.y)<12) return {kind:'corner',index:i};
+    }
+  }
+  let best=null,bestD=14;
+  for(const key of ORDER){
+    const [p1,p2]=lineEnds(key);
+    const a=toScreen(p1), b=toScreen(p2);
+    const d=distToSegment(local,a,b);
+    if(d<bestD){ bestD=d; best={kind:'line',key}; }
+  }
+  return best;
+}
+
+function distToSegment(p,a,b){
+  const dx=b.x-a.x, dy=b.y-a.y;
+  const len2=dx*dx+dy*dy;
+  if(len2<1e-9) return Math.hypot(p.x-a.x,p.y-a.y);
+  let t=((p.x-a.x)*dx+(p.y-a.y)*dy)/len2;
+  t=clamp(t,0,1);
+  return Math.hypot(p.x-(a.x+t*dx), p.y-(a.y+t*dy));
+}
+
+/* ─────────────────────────── 交互 ─────────────────────────── */
+function onPointerDown(e){
+  if(!S.img) return;
+  const r=stage.getBoundingClientRect();
+  const hit=hitTest(e.clientX,e.clientY);
+  if(!hit) return;
+  S.drag=hit;
+  if(hit.kind==='line') S.active=hit.key;
+  view.classList.add('dragging');
+  view.setPointerCapture(e.pointerId);
+  e.preventDefault();
+}
+
+function onPointerMove(e){
+  const r=stage.getBoundingClientRect();
+  S.pointer.inside=true;
+  S.pointer.x=e.clientX-r.left;
+  S.pointer.y=e.clientY-r.top;
+
+  if(!S.img){ drawLoupe(S.pointer.x,S.pointer.y); return; }
+
+  if(S.drag){
+    const p=toImage(e.clientX-r.left, e.clientY-r.top);
+    if(S.drag.kind==='corner'){
+      const i=S.drag.index;
+      S.quad[i]={ x:clamp(p.x,0,S.img.width), y:clamp(p.y,0,S.img.height) };
+    }else{
+      const k=S.drag.key;
+      let v= VERTICAL.has(k)? p.x : p.y;
+      v=clamp(v,0, VERTICAL.has(k)?S.img.width:S.img.height);
+      S.lines[k]=v;
+      S.active=k;
+    }
+    update();
+  }else{
+    S.hover=hitTest(e.clientX,e.clientY)?.key||null;
+    drawLoupe(S.pointer.x,S.pointer.y);
+    draw();
+  }
+}
+
+function endDrag(){
+  S.drag=null;
+  view.classList.remove('dragging');
+}
+
+function onPointerUp(){ endDrag(); }
+function onPointerLeave(){
+  S.pointer.inside=false; S.hover=null;
+  loupe.classList.remove('on');
+  draw();
+}
+
+/* 方向键微调：单像素是这个工具存在的意义 */
+function onKeyDown(e){
+  if(!S.img) return;
+  if(e.key==='Tab'){
+    e.preventDefault();
+    const i=ORDER.indexOf(S.active);
+    S.active=ORDER[(i+1)%ORDER.length];
+    draw(); return;
+  }
+  const step=e.shiftKey?10:1;
+  let dv=0;
+  if(e.key==='ArrowLeft') dv=-step;
+  else if(e.key==='ArrowRight') dv=step;
+  else if(e.key==='ArrowUp') dv=-step;
+  else if(e.key==='ArrowDown') dv=step;
+  else return;
+  e.preventDefault();
+
+  if(S.drag&&S.drag.kind==='corner'){
+    const i=S.drag.index;
+    const horiz = e.key==='ArrowLeft'||e.key==='ArrowRight';
+    S.quad[i]={ x:clamp(S.quad[i].x+(horiz?dv:0),0,S.img.width),
+                y:clamp(S.quad[i].y+(horiz?0:dv),0,S.img.height) };
+  }else{
+    const k=S.active;
+    const vert=VERTICAL.has(k);
+    const horiz=e.key==='ArrowLeft'||e.key==='ArrowRight';
+    if(vert!==horiz) return;          // 竖线只吃左右键
+    S.lines[k]=clamp(S.lines[k]+dv,0, vert?S.img.width:S.img.height);
+  }
+  update();
+}
+
+/* 滚轮缩放 */
+function onWheel(e){
+  if(!S.img) return;
+  e.preventDefault();
+  const r=stage.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const before=toImage(mx,my);
+  const factor=e.deltaY<0?1.12:1/1.12;
+  S.view.scale=clamp(S.view.scale*factor,0.05,12);
+  S.view.tx=mx-before.x*S.view.scale;
+  S.view.ty=my-before.y*S.view.scale;
+  draw();
+}
+
+/* ─────────────────────────── 面板刷新 ─────────────────────────── */
+function update(){
+  const m=measure();
+  S.measure=m;
+  draw();
+
+  if(!m){
+    $('vLR').textContent='—'; $('vTB').textContent='—';
+    $('mmLR').textContent=''; $('mmTB').textContent='';
+    return;
+  }
+
+  const lrWorst = Math.max(m.leftPct,m.rightPct);
+  const tbWorst = Math.max(m.topPct,m.botPct);
+
+  $('vLR').textContent=`${m.leftPct.toFixed(1)} / ${m.rightPct.toFixed(1)}`;
+  $('vTB').textContent=`${m.topPct.toFixed(1)} / ${m.botPct.toFixed(1)}`;
+  $('vLR').classList.toggle('worst', lrWorst>=tbWorst);
+  $('vTB').classList.toggle('worst', tbWorst>lrWorst);
+
+  $('mmLR').textContent=`${m.leftMM.toFixed(2)} / ${m.rightMM.toFixed(2)} mm`;
+  $('mmTB').textContent=`${m.topMM.toFixed(2)} / ${m.botMM.toFixed(2)} mm`;
+  const showMM=$('optMM').checked;
+  $('mmLR').style.visibility=showMM?'visible':'hidden';
+  $('mmTB').style.visibility=showMM?'visible':'hidden';
+
+  // 等级表
+  const body=$('gradeBody');
+  body.innerHTML='';
+  for(const key of ['PSA','BGS','CGC','SGC','TAG']){
+    const std=STANDARDS[key];
+    const g=gradeFor(m.worst,std.front);
+    const tr=document.createElement('tr');
+    const isGem = g.label.startsWith('10');
+    const isNear = !isGem && (g.limit-m.worst)<6;
+    tr.className=isGem?'gem':(isNear?'near':'low');
+    tr.innerHTML=`<td>${std.label}</td>
+      <td class="limit">${g.limit.toFixed(0)}/${(100-g.limit).toFixed(0)}</td>
+      <td class="grade">${g.label}</td>`;
+    body.appendChild(tr);
+  }
+
+  // 判定
+  // 注意 worst 是「较差一侧占边框总宽的比例」，完美居中的下限就是 50.0，
+  // 不是 0。所以阈值必须围绕 50 来设，而不是围绕 0。
+  const v=$('verdict');
+  v.className='verdict';
+  const w=m.worst;
+  if(m.fullBleed){
+    v.classList.add('bad');
+    v.innerHTML='<b>无边框 / 满版卡</b>：至少一个方向测不到内框，无法判定居中。请改用画面参考锚点。';
+  }else if(w<=50.3){
+    v.innerHTML=`<b>接近完美居中</b>：较差一侧仅占 ${w.toFixed(1)}%，肉眼不可辨。`;
+  }else if(w<=52.5){
+    v.innerHTML=`<b>优秀</b>：较差一侧 ${w.toFixed(1)}%，任何机构的顶级档都稳稳通过。`;
+  }else if(w<=55){
+    const headroom=55-w;
+    v.innerHTML=`<b>贴在 PSA 10 线上</b>：较差一侧 ${w.toFixed(1)}%（${m.worstAxis}），余量 ${headroom.toFixed(1)} pp。
+      ${headroom<0.5?'<br>⚠ 不足 0.5 pp，四舍五入到整数会翻转结论。':''}`;
+  }else if(w<=60){
+    v.innerHTML=`<b>PSA 10 出局</b>：较差一侧 ${w.toFixed(1)}%（${m.worstAxis}），9 分档（60/40）仍然安全。`;
+  }else{
+    v.classList.add('bad');
+    v.innerHTML=`<b>明显偏心</b>：较差一侧 ${w.toFixed(1)}%（${m.worstAxis}），已超出多数机构 9 分档。`;
+  }
+}
+
+/* ─────────────────────────── 自动检测 ─────────────────────────── */
+/**
+ * 简化版投影剖面检测：降采样 → 灰度 → Sobel → 列/行投影 → 从外向内找峰。
+ * 与 Python 版同源，但在浏览器里只跑一次“粗定位”，之后靠人微调。
+ */
+function autoDetect(){
+  if(!S.img) return;
+  const targetW=700;
+  const s=Math.min(1,targetW/S.img.width);
+  const w=Math.round(S.img.width*s), h=Math.round(S.img.height*s);
+
+  const c=document.createElement('canvas');
+  c.width=w; c.height=h;
+  const cx=c.getContext('2d',{willReadFrequently:true});
+  cx.drawImage(S.img,0,0,w,h);
+  const data=cx.getImageData(0,0,w,h).data;
+
+  const gray=new Float32Array(w*h);
+  for(let i=0,j=0;i<data.length;i+=4,j++){
+    gray[j]=0.299*data[i]+0.587*data[i+1]+0.114*data[i+2];
+  }
+
+  const col=new Float32Array(w), row=new Float32Array(h);
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      const i=y*w+x;
+      const gx=Math.abs(gray[i-w+1]+2*gray[i+1]+gray[i+w+1]
+                     -gray[i-w-1]-2*gray[i-1]-gray[i+w-1]);
+      const gy=Math.abs(gray[i+w-1]+2*gray[i+w]+gray[i+w+1]
+                     -gray[i-w-1]-2*gray[i-w]-gray[i-w+1]);
+      col[x]+=gx; row[y]+=gy;
+    }
+  }
+  // 5 tap 平滑
+  const smooth=a=>{
+    const o=new Float32Array(a.length);
+    for(let i=0;i<a.length;i++){
+      let s2=0,n=0;
+      for(let k=-2;k<=2;k++){ const j=i+k; if(j>=0&&j<a.length){s2+=a[j];n++;} }
+      o[i]=s2/n;
+    }
+    return o;
+  };
+  const C=smooth(col), R=smooth(row);
+
+  const isPeak=(p,i,thr)=>{
+    if(p[i]<thr) return false;
+    return (i===0||p[i]>=p[i-1])&&(i===p.length-1||p[i]>=p[i+1]);
+  };
+
+  const findPair=(prof,fromStart)=>{
+    const n=prof.length;
+    let peak=0; for(const v of prof) peak=Math.max(peak,v);
+    if(peak<=0) return [null,null];
+    const band=Math.max(8,Math.floor(n*0.18));
+    const lo=fromStart?0:n-band, hi=fromStart?band:n;
+
+    // 外框：正向取最靠左的强峰，反向取最靠右的强峰
+    let outer=-1;
+    for(let i=lo;i<hi;i++){
+      if(isPeak(prof,i,peak*0.35)){
+        outer=i;
+        if(fromStart) break;
+      }
+    }
+    if(outer<0) outer=fromStart?lo:hi-1;
+
+    // 内框：从外框向内遇到的第一个强峰（不是全局最大，否则会跳到卡片对侧）
+    const gap=Math.max(4,Math.floor(n*0.03));
+    const reach=Math.max(gap*2,Math.floor(n*0.32));
+    let a,b;
+    if(fromStart){ a=outer+gap; b=Math.min(n,outer+reach); }
+    else{ a=Math.max(0,outer-reach); b=outer-gap; }
+
+    let inner=-1;
+    if(fromStart){
+      for(let i=a;i<b;i++){ if(isPeak(prof,i,peak*0.55)){ inner=i; break; } }
+    }else{
+      for(let i=b-1;i>=a;i--){ if(isPeak(prof,i,peak*0.55)){ inner=i; break; } }
+    }
+    if(inner<0) inner=fromStart?a:b-1;
+    return [outer,inner];
+  };
+
+  const [oL,iL]=findPair(C,true);
+  const [oR,iR]=findPair(C,false);
+  const [oT,iT]=findPair(R,true);
+  const [oB,iB]=findPair(R,false);
+
+  const inv=1/s;
+  S.lines={
+    outL:oL*inv, inL:iL*inv, inR:iR*inv, outR:oR*inv,
+    outT:oT*inv, inT:iT*inv, inB:iB*inv, outB:oB*inv,
+  };
+  S.quad=[
+    {x:oL*inv,y:oT*inv},{x:oR*inv,y:oT*inv},
+    {x:oR*inv,y:oB*inv},{x:oL*inv,y:oB*inv},
+  ];
+  update();
+}
+
+/* ─────────────────────────── 图像加载 ─────────────────────────── */
+function loadImage(src){
+  const img=new Image();
+  img.onload=()=>{
+    S.img=img;
+    $('drop').classList.add('hide');
+    $('btnDetect').disabled=false;
+    $('btnReset').disabled=false;
+
+    const m=0.02, mi=0.08;
+    S.quad=[
+      {x:img.width*m*2,y:img.height*m*2},
+      {x:img.width*(1-m*2),y:img.height*m*2},
+      {x:img.width*(1-m*2),y:img.height*(1-m*2)},
+      {x:img.width*m*2,y:img.height*(1-m*2)},
+    ];
+    S.lines={
+      outL:img.width*m,  inL:img.width*mi,
+      inR:img.width*(1-mi), outR:img.width*(1-m),
+      outT:img.height*m, inT:img.height*mi,
+      inB:img.height*(1-mi), outB:img.height*(1-m),
+    };
+    S.active='inL';
+    fitView();
+    update();
+  };
+  img.onerror=()=>alert('图片加载失败');
+  img.src=src;
+}
+
+function openFile(file){
+  if(!file||!file.type.startsWith('image/')) return;
+  const r=new FileReader();
+  r.onload=ev=>loadImage(ev.target.result);
+  r.readAsDataURL(file);
+}
+
+/* ─────────────────────────── 事件绑定 ─────────────────────────── */
+$('btnOpen').onclick=()=>$('file').click();
+$('file').onchange=e=>openFile(e.target.files[0]);
+$('btnDetect').onclick=autoDetect;
+$('btnReset').onclick=()=>{ if(S.img) loadImage(S.img.src); };
+$('optLoupe').onchange=()=>{ if(!$('optLoupe').checked) loupe.classList.remove('on'); draw(); };
+$('optQuad').onchange=draw;
+$('optMM').onchange=update;
+
+view.addEventListener('pointerdown',onPointerDown);
+view.addEventListener('pointermove',onPointerMove);
+view.addEventListener('pointerup',onPointerUp);
+view.addEventListener('pointercancel',onPointerUp);
+view.addEventListener('pointerleave',onPointerLeave);
+view.addEventListener('wheel',onWheel,{passive:false});
+window.addEventListener('keydown',onKeyDown);
+window.addEventListener('resize',resize);
+
+stage.addEventListener('dragover',e=>{e.preventDefault();});
+stage.addEventListener('drop',e=>{
+  e.preventDefault();
+  const f=e.dataTransfer.files[0];
+  if(f) openFile(f);
+});
+window.addEventListener('paste',e=>{
+  for(const item of e.clipboardData.items){
+    if(item.type.startsWith('image/')){ openFile(item.getAsFile()); break; }
+  }
+});
+
+resize();
+})();
+</script>
+</body>
+</html>
