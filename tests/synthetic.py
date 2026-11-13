@@ -74,18 +74,47 @@ def make_card(
     bottom = bh - top
 
     art = card.copy()
-    art[top:card_h - bottom, left:card_width - right] = (38, 44, 58)
+    x0, x1 = left, card_width - right
+    y0, y1 = top, card_h - bottom
+    aw, ah = x1 - x0, y1 - y0
+
+    # Artwork: vertical gradient plus a name band, so the demo report shows
+    # something card-shaped rather than a flat swatch. All of it stays well
+    # inside the border, which is what the detector actually measures.
+    ramp = np.linspace(0.0, 1.0, ah, dtype=np.float32)[:, None]
+    grad = np.zeros((ah, aw, 3), dtype=np.float32)
+    # BGR: deep blue at the top fading to warm ink at the foot.
+    for ch, (lo, hi) in enumerate(((104, 58), (74, 40), (56, 30))):
+        grad[..., ch] = lo + (hi - lo) * ramp
+    art[y0:y1, x0:x1] = np.clip(grad, 0, 255).astype(np.uint8)
+
+    # Soft highlight blob, off-centre like real foil.
+    yy, xx = np.mgrid[0:ah, 0:aw].astype(np.float32)
+    cx, cy = aw * 0.68, ah * 0.30
+    blob = np.exp(-(((xx - cx) / (aw * 0.42)) ** 2 + ((yy - cy) / (ah * 0.30)) ** 2))
+    art[y0:y1, x0:x1] = np.clip(
+        art[y0:y1, x0:x1].astype(np.float32) + blob[..., None] * np.float32(26.0), 0, 255
+    ).astype(np.uint8)
+
+    # Name band at the foot of the artwork.
+    band_h = max(6, int(ah * 0.10))
+    art[y1 - band_h:y1, x0:x1] = (30, 34, 42)
+    cv2.line(art, (x0, y1 - band_h), (x1, y1 - band_h), (140, 150, 165), max(1, aw // 300))
+
+    cv2.putText(
+        art, "SYNTHETIC", (x0 + max(6, aw // 24), y0 + max(18, ah // 9)),
+        cv2.FONT_HERSHEY_SIMPLEX, max(0.4, aw / 900), (225, 225, 230), max(1, aw // 400), cv2.LINE_AA,
+    )
+    cv2.putText(
+        art, "DEMO CARD", (x0 + max(6, aw // 24), y1 - band_h // 3),
+        cv2.FONT_HERSHEY_SIMPLEX, max(0.34, aw / 1300), (185, 190, 200), max(1, aw // 520), cv2.LINE_AA,
+    )
     cv2.rectangle(
         art,
-        (left, top),
-        (card_width - right - 1, card_h - bottom - 1),
+        (x0, y0),
+        (x1 - 1, y1 - 1),
         (20, 24, 34),
         thickness=max(2, card_width // 220),
-    )
-    # Some internal structure so the inner edge is not the only strong gradient.
-    cv2.putText(
-        art, "SYNTHETIC", (left + 16, top + 62),
-        cv2.FONT_HERSHEY_SIMPLEX, 1.1, (210, 210, 210), 3, cv2.LINE_AA,
     )
 
     if noise > 0:

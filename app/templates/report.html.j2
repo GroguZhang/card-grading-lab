@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ card_name }} — 本地评分报告 {{ report_id }}</title>
+<style>{{ css }}</style>
+</head>
+<body>
+<div class="report">
+
+  <header class="rhead">
+    <div class="brand">
+      <div class="mark">CL</div>
+      <div>
+        <h1>Card Centering Lab</h1>
+        <p>Local Grade Report</p>
+      </div>
+    </div>
+    <div class="meta">
+      ID <b>{{ report_id }}</b><br>
+      {{ generated_at }}<br>
+      {{ model_version }} · 阈值 {{ threshold_version }}
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="cardframe">
+      {% if images.card %}
+      <img src="{{ images.card }}" alt="front">
+      {% else %}
+      <div class="placeholder">未提供卡图<br>仅渲染结构化结果</div>
+      {% endif %}
+    </div>
+
+    <div class="verdict">
+      <div class="kicker">总评 Overall grade</div>
+      <div class="name">{{ card_name }}</div>
+      <div class="scoreline">
+        <span class="num">{{ '%g'|format(overall) }}</span>
+        <span class="tier">{{ tier }}</span>
+      </div>
+      <div class="sub">本地自评结果 · 非官方评级 · 不构成交易建议</div>
+
+      <div class="preds">
+        {% for p in preds %}
+        <div class="pred{% if p.lead %} lead{% endif %}">
+          <div class="c">{{ p.company }}</div>
+          <div class="v">{{ '%g'|format(p.value) }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="dims">
+    <h2>四维子分</h2>
+    {% for d in dims %}
+    <div class="dim">
+      <div class="n">{{ d.label }}</div>
+      <div class="track"><div class="fill {{ d.cls }}" style="width:{{ d.pct }}%"></div></div>
+      <div class="s{% if not d.assessed %} na{% endif %}">{% if d.assessed %}{{ '%g'|format(d.subgrade) }}{% else %}—{% endif %}</div>
+    </div>
+    {% endfor %}
+    {% if limiting %}
+    <div class="limiting">限制项 Limiting factor：<b>{{ limiting }}</b> — 该项决定了总评上限。</div>
+    {% endif %}
+    {% if unassessed %}
+    <div class="unassess">未启用视觉判定的维度显示为 <b>—</b>，总分按“该维度无缺陷”计算，
+      因此这些维度的 10 分是默认值而非测量结果。</div>
+    {% endif %}
+  </section>
+
+  {% if centering %}
+  <section class="sec">
+    <h2>居中 Centering</h2>
+    <div class="cenwrap">
+      <div class="cenimg">
+        {% if images.centering_front %}
+        <img src="{{ images.centering_front }}" alt="centering">
+        {% else %}
+        <div class="placeholder" style="padding:60px 20px;color:#5d6775;font-size:11px;text-align:center">无居中证据图</div>
+        {% endif %}
+      </div>
+      <div class="cennums">
+        <div class="cenrow">
+          <span class="k">LEFT / RIGHT</span>
+          <span class="v {{ centering.lr_cls }}">{{ centering.lr_ratio }}</span>
+        </div>
+        <div class="cenrow">
+          <span class="k">TOP / BOTTOM</span>
+          <span class="v {{ centering.tb_cls }}">{{ centering.tb_ratio }}</span>
+        </div>
+        {% if centering.back_lr_ratio %}
+        <div class="cenrow">
+          <span class="k">背面 L / R</span>
+          <span class="v {{ centering.back_lr_cls }}">{{ centering.back_lr_ratio }}</span>
+        </div>
+        <div class="cenrow">
+          <span class="k">背面 T / B</span>
+          <span class="v {{ centering.back_tb_cls }}">{{ centering.back_tb_ratio }}</span>
+        </div>
+        {% endif %}
+        <div class="cenverdict {{ centering.verdict_cls }}">{{ centering.verdict }}</div>
+        <div class="legend">
+          <span><i class="r"></i>卡片切割边</span>
+          <span><i class="g"></i>画面边框</span>
+        </div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="sec">
+    <h2>扫描摘要 Scan summary</h2>
+    <div class="scan">
+      {% for s in scan %}
+      <div class="cell">
+        <div class="t">{{ s.title }}</div>
+        <div class="f"><span>正</span><b class="{{ s.front_cls }}">{{ s.front }}</b></div>
+        <div class="b"><span>背</span><b class="{{ s.back_cls }}">{{ s.back }}</b></div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>分区图 Card map</h2>
+    <div class="maprow">
+      <div class="mapframe">
+        {% if images.card %}
+        <img src="{{ images.card }}" alt="map">
+        {% endif %}
+        <div class="mapgrid">
+          {% for z in zone_grid %}
+          <div class="z {{ z.cls }}{% if z.empty %} empty{% endif %}">{{ z.text }}</div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="maptip">
+        {% if lowest_zone %}
+        最低分区 <b>{{ lowest_zone.label }}</b>，得分 <b>{{ lowest_zone.score }}</b>。<br><br>
+        {% endif %}
+        分区分数按<strong>单区缺陷扣分</strong>计算；子分则在最差分区的基线上，
+        额外叠加「多区同时受损」的一致性惩罚。这就是为什么分区 9.7 可能对应子分 9。
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>等级证据 Grade evidence · {{ signals|length }} 条信号</h2>
+    <div class="evigrid">
+      {% for s in signals %}
+      <div class="evi">
+        <div class="sev {{ s.severity_cls }}">{{ s.severity }}</div>
+        <div class="loc">{{ s.side_label }} · {{ s.zone_label }}
+          <span>{{ s.defect_text }}</span>
+        </div>
+        <div class="src {{ s.src_cls }}">{{ s.source_text }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="evinote">
+      <b>AI 判定</b>来自视觉模型，可能误报；<b>CV 测量</b>为像素级量化，可覆盖视觉判断。
+      本地实现中，CV 结果拥有否决权。
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>评级综述 Grade summary</h2>
+    <p class="story">{{ story }}</p>
+
+    <div class="zonelist">
+      {% for z in zone_analysis %}
+      <div class="zoneblk">
+        <div class="h"><span class="t">{{ z.label }}</span><span class="g">{{ z.grade }}</span></div>
+        <p>{{ z.text }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <footer class="rfoot">
+    <div class="warnbox">
+      <b>本报告由本地工具生成，不是官方评级。</b>
+      所有分数基于所提供照片的自动分析，受光照、对焦、反光与拍摄角度影响。
+      评级公司检验实物，最终结果可能不同。居中比例来自几何测量；四角、边缘、表面
+      {% if not has_vision %}在本次运行中<b>未启用视觉判定</b>，相关子分为默认值{% endif %}。
+      本工具不鉴定签名、不评估真伪、不做市场估值。
+    </div>
+    {% if warnings %}
+    <div class="warnbox" style="margin-top:10px">
+      <b>本次运行的提示</b><br>
+      {% for w in warnings %}· {{ w }}<br>{% endfor %}
+    </div>
+    {% endif %}
+    <div class="sig">
+      <span>card-grading-engine · local</span>
+      <span>{{ report_id }} · {{ generated_at }}</span>
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>

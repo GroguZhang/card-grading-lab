@@ -1,0 +1,240 @@
+/* ─────────────────────────────────────────────────────────────
+   Local grade report — dark instrument-panel styling.
+   Deliberately not a copy of any vendor's look: the information
+   architecture is what carries over, the visual language is ours.
+   ───────────────────────────────────────────────────────────── */
+
+:root{
+  --bg:#0b0d11;
+  --panel:#12161d;
+  --panel2:#171c25;
+  --line:#232a35;
+  --line2:#2c3542;
+  --text:#e7ecf3;
+  --dim:#8a95a5;
+  --dim2:#5d6775;
+  --amber:#f5c451;
+  --green:#4ade80;
+  --red:#f87171;
+  --cyan:#38bdf8;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{
+  background:var(--bg); color:var(--text); font-family:var(--font);
+  -webkit-font-smoothing:antialiased; line-height:1.5;
+}
+
+.report{max-width:880px; margin:0 auto; padding:36px 40px 56px}
+
+/* ── header ─────────────────────────────────────────── */
+.rhead{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:24px; padding-bottom:18px; border-bottom:1px solid var(--line);
+}
+.brand{display:flex; align-items:center; gap:11px}
+.brand .mark{
+  width:34px; height:34px; border-radius:9px; display:grid; place-items:center;
+  background:linear-gradient(145deg,#f5c451,#c9971f); color:#151006;
+  font-weight:800; font-size:14px; letter-spacing:-.02em;
+}
+.brand h1{font-size:14px; font-weight:650; letter-spacing:.02em}
+.brand p{font-size:10.5px; color:var(--dim2); letter-spacing:.14em; text-transform:uppercase; margin-top:2px}
+.meta{text-align:right; font-size:10.5px; color:var(--dim2); line-height:1.8; font-family:var(--mono)}
+.meta b{color:var(--dim); font-weight:500}
+
+/* ── hero ───────────────────────────────────────────── */
+.hero{
+  display:grid; grid-template-columns:1fr 1fr; gap:26px;
+  padding:26px 0 22px; border-bottom:1px solid var(--line);
+}
+.cardframe{
+  position:relative; border-radius:14px; overflow:hidden;
+  background:#0e1218; border:1px solid var(--line2);
+  aspect-ratio:63.5/88.9; display:grid; place-items:center;
+}
+.cardframe img{width:100%; height:100%; object-fit:contain; display:block}
+.cardframe .placeholder{color:var(--dim2); font-size:11px; text-align:center; padding:20px}
+
+.verdict{display:flex; flex-direction:column; justify-content:center}
+.verdict .kicker{
+  font-size:10px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--dim2); margin-bottom:8px;
+}
+.verdict .name{font-size:19px; font-weight:650; margin-bottom:14px}
+.scoreline{display:flex; align-items:baseline; gap:14px; margin-bottom:6px}
+.scoreline .num{
+  font-family:var(--mono); font-size:72px; font-weight:700; line-height:.9;
+  letter-spacing:-.045em; color:var(--amber);
+}
+.scoreline .tier{
+  font-size:11px; font-weight:700; letter-spacing:.13em; color:#111;
+  background:var(--amber); padding:4px 9px; border-radius:5px;
+}
+.sub{font-size:11.5px; color:var(--dim2); margin-bottom:18px}
+
+.preds{display:flex; gap:8px; flex-wrap:wrap}
+.pred{
+  flex:1; min-width:88px; background:var(--panel2); border:1px solid var(--line);
+  border-radius:9px; padding:9px 11px;
+}
+.pred .c{font-size:9.5px; letter-spacing:.1em; color:var(--dim2); text-transform:uppercase}
+.pred .v{font-family:var(--mono); font-size:20px; font-weight:650; margin-top:2px}
+.pred.lead .v{color:var(--amber)}
+
+/* ── dimension bars ─────────────────────────────────── */
+.dims{padding:22px 0; border-bottom:1px solid var(--line)}
+.dims h2, .sec h2{
+  font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+  color:var(--dim2); margin-bottom:14px; font-weight:650;
+}
+.dim{display:grid; grid-template-columns:96px 1fr 42px; align-items:center; gap:12px; margin-bottom:9px}
+.dim .n{font-size:11.5px; color:var(--dim); letter-spacing:.03em}
+.dim .track{height:9px; border-radius:5px; background:#1b212b; overflow:hidden}
+.dim .fill{height:100%; border-radius:5px; background:linear-gradient(90deg,#2f855a,var(--green))}
+.dim .fill.low{background:linear-gradient(90deg,#8a6a1a,var(--amber))}
+.dim .fill.bad{background:linear-gradient(90deg,#7f2b2b,var(--red))}
+.dim .s{font-family:var(--mono); font-size:13px; font-weight:650; text-align:right}
+.dim .s.na{color:var(--dim2); font-weight:400}
+.dim .fill.none{background:#1b212b}
+
+.unassess{
+  margin-top:10px; font-size:10.5px; line-height:1.7; color:var(--dim2);
+  border-left:2px solid var(--line2); padding-left:10px;
+}
+.unassess b{color:var(--dim)}
+
+.limiting{
+  margin-top:14px; font-size:11.5px; color:#e8c98a;
+  background:#241d0f; border:1px solid #5c4a1e; border-radius:7px; padding:8px 11px;
+}
+
+/* ── sections ───────────────────────────────────────── */
+.sec{padding:22px 0; border-bottom:1px solid var(--line)}
+.sec:last-of-type{border-bottom:none}
+
+.cenwrap{display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:center}
+.cenimg{border-radius:11px; overflow:hidden; border:1px solid var(--line2); background:#0e1218}
+.cenimg img{width:100%; display:block}
+.cennums{display:flex; flex-direction:column; gap:12px}
+.cenrow{display:flex; align-items:baseline; justify-content:space-between; gap:12px}
+.cenrow .k{font-size:10.5px; letter-spacing:.1em; color:var(--dim2)}
+.cenrow .v{font-family:var(--mono); font-size:24px; font-weight:650}
+.cenrow .v.ok{color:var(--green)}
+.cenrow .v.warn{color:var(--amber)}
+.cenrow .v.bad{color:var(--red)}
+.legend{font-size:10px; color:var(--dim2); display:flex; gap:14px; margin-top:4px}
+.legend i{display:inline-block; width:14px; height:2px; vertical-align:middle; margin-right:5px}
+.legend .r{background:#eb3c3c}
+.legend .g{background:#5ac85a}
+.cenverdict{
+  font-size:11.5px; line-height:1.6; padding:7px 10px; border-radius:7px;
+  background:#151a22; border:1px solid var(--line);
+}
+.cenverdict.ok{color:var(--green); border-color:#25452f}
+.cenverdict.warn{color:var(--amber); border-color:#5c4a1e}
+.cenverdict.bad{color:var(--red); border-color:#5c2626}
+
+/* ── scan summary ───────────────────────────────────── */
+.scan{display:grid; grid-template-columns:repeat(4,1fr); gap:9px}
+.scan .cell{background:var(--panel2); border:1px solid var(--line); border-radius:9px; padding:10px 11px}
+.scan .cell .t{font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim2); margin-bottom:6px}
+.scan .cell .f, .scan .cell .b{font-family:var(--mono); font-size:11.5px; line-height:1.7}
+.scan .cell .f span, .scan .cell .b span{color:var(--dim2); font-size:9.5px; margin-right:5px}
+.scan .cell .ok{color:var(--green)}
+.scan .cell .warn{color:var(--amber)}
+.scan .cell .na{color:var(--dim2)}
+
+/* ── card map ───────────────────────────────────────── */
+.maprow{display:grid; grid-template-columns:230px 1fr; gap:22px; align-items:start}
+.mapframe{position:relative; border-radius:11px; overflow:hidden; border:1px solid var(--line2); background:#0e1218}
+.mapframe img{width:100%; display:block}
+.mapgrid{
+  position:absolute; inset:0; display:grid;
+  grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr);
+  padding:5%;
+}
+.mapgrid .z{
+  align-self:center; justify-self:center;
+  font-family:var(--mono); font-size:11px; font-weight:650;
+  padding:2px 6px; border-radius:5px;
+  background:rgba(11,13,17,.82); border:1px solid var(--line2);
+  backdrop-filter:blur(2px);
+}
+.mapgrid .z.hi{color:var(--green)}
+.mapgrid .z.mid{color:var(--amber)}
+.mapgrid .z.lo{color:var(--red)}
+.mapgrid .empty{visibility:hidden}
+.maptip{font-size:11.5px; color:var(--dim); line-height:1.8}
+.maptip b{color:var(--amber)}
+
+/* ── evidence ───────────────────────────────────────── */
+.evigrid{display:flex; flex-direction:column; gap:0}
+.evi{
+  display:grid; grid-template-columns:60px 1fr auto; gap:12px; align-items:center;
+  padding:9px 0; border-bottom:1px solid #1b212b;
+}
+.evi:last-child{border-bottom:none}
+.sev{
+  font-size:9px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  padding:3px 0; border-radius:4px; text-align:center;
+  background:#3a2f14; color:#e8c98a; border:1px solid #5c4a1e;
+}
+.sev.major{background:#3a1a1a; color:#f0a0a0; border-color:#5c2626}
+.sev.critical{background:#4a1010; color:#ff8b8b; border-color:#7a1d1d}
+.evi .loc{font-size:12.5px; font-weight:600}
+.evi .loc span{color:var(--dim); font-weight:400}
+.evi .src{font-size:10px; color:var(--dim2); font-family:var(--mono); text-align:right; white-space:nowrap}
+.src .cv{color:var(--cyan)}
+.evinote{font-size:11px; color:var(--dim2); margin-top:10px; line-height:1.7}
+
+/* ── narrative ──────────────────────────────────────── */
+.story{font-size:13px; line-height:1.85; color:#cfd6e0}
+.story b{color:var(--text)}
+.zonelist{display:flex; flex-direction:column; gap:14px; margin-top:16px}
+.zoneblk{border-left:2px solid var(--line2); padding-left:13px}
+.zoneblk .h{display:flex; align-items:center; gap:9px; margin-bottom:5px}
+.zoneblk .h .t{font-size:11px; letter-spacing:.1em; color:var(--dim); text-transform:uppercase}
+.zoneblk .h .g{font-family:var(--mono); font-size:12px; font-weight:650; color:var(--amber)}
+.zoneblk p{font-size:12px; line-height:1.8; color:var(--dim)}
+.zoneblk p b{color:#cfd6e0; font-weight:600}
+
+/* ── footer ─────────────────────────────────────────── */
+.rfoot{padding-top:20px; border-top:1px solid var(--line); margin-top:8px}
+.rfoot .warnbox{
+  font-size:10.5px; line-height:1.75; color:var(--dim2);
+  background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px;
+}
+.rfoot .warnbox b{color:var(--dim)}
+.rfoot .sig{margin-top:12px; display:flex; justify-content:space-between; font-size:9.5px; color:#3f4754; font-family:var(--mono)}
+
+@page{
+  size:A4;
+  margin:13mm 11mm;
+}
+
+@media print{
+  html,body{background:#0b0d11}
+  /* Paper margins come from @page. Width is fixed in mm on purpose: under
+     print, `100%` resolves against the full sheet rather than the page area,
+     which silently overflows. 176mm inside a 188mm area leaves 6mm of slack
+     so sub-pixel rounding can never clip an edge. */
+  .report{width:176mm; max-width:176mm; margin:0 auto; padding:0}
+
+  /* Card art is the reason this report used to spend a page per section.
+     Capping the image column lets two sections share a sheet. */
+  .hero{grid-template-columns:54mm 1fr; gap:14mm; padding:16px 0 14px}
+  .cenwrap{grid-template-columns:52mm 1fr; gap:10mm}
+  .maprow{grid-template-columns:40mm 1fr; gap:10mm}
+  .sec{padding:14px 0}
+  .dims{padding:16px 0}
+  .scoreline .num{font-size:64px}
+
+  /* Keep small units whole; let big ones flow across the break. */
+  .evi, .scan .cell, .pred, .zoneblk, .limiting, .rfoot{break-inside:avoid}
+  .sec h2, .dims h2{break-after:avoid}
+  .hero, .dims{break-inside:avoid}
+}

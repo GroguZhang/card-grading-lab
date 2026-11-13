@@ -100,6 +100,73 @@ print(report.is_borderline("PSA"))  # True —— 四舍五入到 55 会假通�
 
 ---
 
+## 报告服务（`app/`）
+
+`src/` 负责测量，`app/` 负责把它变成一份可以打印的中文报告。链路：
+
+```
+上传图片 → 透视校正 → 边框测量 → 缺陷信号 → 四层评分 → HTML → PDF
+```
+
+### 跑起来
+
+```bash
+pip install -r requirements.txt
+python -m uvicorn app.main:app --port 8770
+```
+
+打开 <http://127.0.0.1:8770/> 上传，或直接看 <http://127.0.0.1:8770/demo>（合成卡 + 样本缺陷集，不需要图片）。
+
+| 路由 | 用途 |
+|---|---|
+| `GET /` | 上传页 |
+| `POST /api/grade` | 图片 → 报告，返回 `report_id` 与三个链接 |
+| `GET /report/{id}` | HTML 报告 |
+| `GET /report/{id}.pdf` | PDF 报告（首次访问现生成，之后走缓存） |
+| `GET /api/report/{id}` | 结构化 JSON（含信号、分区、子分） |
+| `GET /demo` | 演示报告 |
+
+命令行等价物：
+
+```bash
+python -m tests.render_demo     # 合成卡 + fixture → examples/demo_report.pdf
+python -m tests.test_scoring    # 评分引擎 6 项验收
+```
+
+### 评分模型：四层，每层都能被追问
+
+```
+缺陷信号（哪一角、什么缺陷、有多重、谁报的）
+  └→ 分区分数（9 个区，单区扣分）
+      └→ 维度子分（取最差区 + 跨区一致性惩罚）
+          └→ 总评（四维取最差，映射等级与机构预测）
+```
+
+中间那层**跨区一致性惩罚**是从真实报告的矛盾数字反推出来的：分区 9.7 却给出子分 9，只差这一条规则解释不了。去掉惩罚复现出 9.5，加上得到 9——与样本报告一致（`tests/test_scoring.py` 里有一条专门的敏感性测试守住它）。
+
+机构预测不是把总分换个皮：`predictions` 保留了 PSA / BGS / CGC 之间已知的系统性松紧差（`ScoringConfig.prediction_offsets`）。
+
+### 报告是模板，不是作文
+
+报告里每一句话都由数字推导：`_story_zh` 只陈述"哪些维度达到顶级档"（来自子分）与"限制项两侧各多少条信号"（来自信号表）。没有大模型参与写作，所以同一份输入永远得到同一份文本，也不会出现"居中无可测量偏差"配着 49/51 这种自相矛盾——那正是原产品被拆出来的问题（见 [`docs/report-teardown-zh.md`](docs/report-teardown-zh.md)）。
+
+### 没测就写"没测"
+
+未启用视觉判定时，四角 / 边缘 / 表面不做检查。这时报告显示 `—` 而不是 `10`，并附一行说明：总评按"该维度无缺陷"计算，这些 10 分是默认值。同一原则也用在扫描摘要（`未评估` ≠ `未检出`）。
+
+### PDF 走浏览器打印，不是 PDF 绘图库
+
+版式是 CSS，`@page { size: A4 }` 定纸张，两条引擎依次尝试：
+
+1. Playwright + 本机 Chrome / Edge（`channel="chrome"`，无需下载 150 MB Chromium）
+2. 直接调用本机浏览器的 `--headless=new --print-to-pdf`
+3. 都失败则显式报错并提示用浏览器 `Ctrl+P`
+
+失败不会被吞掉——`render_pdf` 返回 `(ok, message)`，接口据此回 503 并说明原因。
+
+
+---
+
 ## 算法原理
 
 居中本身是除法：
@@ -177,16 +244,32 @@ worst L/R error 0.70 pp   worst T/B error 0.23 pp
 ```
 card-grading-engine/
 ├── docs/
-│   └── ARCHITECTURE_ANALYSIS.md   逆向研究报告
-├── src/
+│   ├── ARCHITECTURE_ANALYSIS.md   竞品逆向研究报告
+│   ├── report-teardown-zh.md      真实报告 PDF 拆解
+│   └── local-build-plan-zh.md     本地化实施方案
+├── src/                           测量内核
 │   ├── perspective_align.py       透视校正：四角检测 / 精修 / 变换 / 去反光
 │   ├── centering_calculator.py    投影剖面找边 / 居中计算 / 等级映射
 │   └── grade_standards.py         六家阈值阶梯（数据与逻辑分离）
+├── app/                           报告服务
+│   ├── defect_model.py            信号 / 分区 / 维度 / 报告 数据模型
+│   ├── scoring.py                 四层评分引擎
+│   ├── zone_splitter.py           九分区切图
+│   ├── pipeline.py                测量 + 评分 + 证据图
+│   ├── report_render.py           Jinja2 → HTML → PDF
+│   ├── db.py                      SQLite 存档
+│   ├── main.py                    FastAPI 路由
+│   ├── templates/report.html.j2   中文报告模板
+│   └── static/report.css          深色仪表盘版式 + 打印规则
+├── fixtures/
+│   └── sample_signals.json        从真实报告重建的 17 条信号 + 期望值
 ├── web-demo/
 │   └── index.html                 零依赖单文件前端
 ├── tests/
 │   ├── synthetic.py               合成卡生成（已知居中比例）
-│   └── run_checks.py              精度自检
+│   ├── run_checks.py              精度自检
+│   ├── test_scoring.py            评分引擎 6 项验收
+│   └── render_demo.py             端到端渲染验收（HTML + PDF）
 └── examples/                      示例输出
 ```
 

@@ -16,6 +16,11 @@ env/
 
 # Generated examples (regenerate with: python -m tests.synthetic)
 examples/*.png
+examples/demo_report.html
+examples/demo_card_rectified.jpg
+
+# Local runtime data: uploads, evidence images, sqlite, rendered pdfs
+data/
 
 # OS / editor
 .DS_Store

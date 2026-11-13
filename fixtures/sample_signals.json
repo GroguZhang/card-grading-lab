@@ -1,0 +1,58 @@
+{
+  "_comment": "Reconstructed signal set from a real CardGrade report (Stephen Curry, overall 9 MINT). Used to verify that the local scoring engine reproduces the observed numbers: 4 corners at 9.7 -> Corners subgrade 9 -> overall 9, limiting factor Corners.",
+  "card_name": "Stephen Curry",
+  "expected": {
+    "overall": 9,
+    "tier": "MINT",
+    "limiting_factor": "corners",
+    "subgrades": {
+      "centering": 10,
+      "corners": 9,
+      "edges": 10,
+      "surface": 10
+    },
+    "predictions": {
+      "PSA": 9,
+      "BGS": 9.5,
+      "CGC": 10
+    },
+    "zone_scores": {
+      "corner": 9.7,
+      "edge": 10.0
+    }
+  },
+  "centering": {
+    "lr_ratio": "49.0/51.0",
+    "tb_ratio": "45.0/55.0",
+    "left_pct": 49.0,
+    "right_pct": 51.0,
+    "top_pct": 45.0,
+    "bottom_pct": 55.0,
+    "lr_worst_pct": 51.0,
+    "tb_worst_pct": 55.0,
+    "back_lr_worst_pct": 59.0,
+    "back_tb_worst_pct": 51.0,
+    "confidence": 0.95
+  },
+  "signals": [
+    {"severity": "minor", "side": "front", "zone": "top_left",     "category": "corner", "defect": "corner_touch", "source": "ai_flagged"},
+    {"severity": "minor", "side": "front", "zone": "top_left",     "category": "corner", "defect": "whitening",    "source": "ai_flagged"},
+    {"severity": "minor", "side": "front", "zone": "top_right",    "category": "corner", "defect": "corner_touch", "source": "ai_flagged"},
+    {"severity": "minor", "side": "front", "zone": "top_right",    "category": "corner", "defect": "whitening",    "source": "ai_flagged"},
+    {"severity": "minor", "side": "front", "zone": "bottom_left",  "category": "corner", "defect": "corner_touch", "source": "ai_flagged"},
+    {"severity": "minor", "side": "front", "zone": "bottom_left",  "category": "corner", "defect": "whitening",    "source": "ai_flagged"},
+    {"severity": "minor", "side": "front", "zone": "bottom_right", "category": "corner", "defect": "corner_touch", "source": "ai_flagged"},
+    {"severity": "minor", "side": "front", "zone": "bottom_right", "category": "corner", "defect": "whitening",    "source": "ai_flagged"},
+
+    {"severity": "minor", "side": "back",  "zone": "top_left",     "category": "corner", "defect": "corner_touch", "source": "ai_flagged"},
+    {"severity": "minor", "side": "back",  "zone": "top_left",     "category": "corner", "defect": "whitening",    "source": "ai_flagged"},
+    {"severity": "minor", "side": "back",  "zone": "top_right",    "category": "corner", "defect": "corner_touch", "source": "ai_flagged"},
+    {"severity": "minor", "side": "back",  "zone": "top_right",    "category": "corner", "defect": "whitening",    "source": "ai_flagged"},
+    {"severity": "minor", "side": "back",  "zone": "bottom_left",  "category": "corner", "defect": "corner_touch", "source": "ai_flagged"},
+    {"severity": "minor", "side": "back",  "zone": "bottom_left",  "category": "corner", "defect": "whitening",    "source": "ai_flagged"},
+    {"severity": "minor", "side": "back",  "zone": "bottom_right", "category": "corner", "defect": "corner_touch", "source": "ai_flagged"},
+    {"severity": "minor", "side": "back",  "zone": "bottom_right", "category": "corner", "defect": "whitening",    "source": "ai_flagged"},
+
+    {"severity": "minor", "side": "front", "zone": "center",       "category": "surface", "defect": "scratch",     "source": "ai_flagged"}
+  ]
+}
