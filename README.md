@@ -5,7 +5,9 @@
 这个仓库做了两件事：
 
 1. **逆向研究**——拆解三家主流在线预评服务（CardGrade.io、Centering Check、Edge Grading）的图像处理链路，把它们的算法、参数、阈值表与交互设计整理成一份可验证的报告：[`docs/ARCHITECTURE_ANALYSIS.md`](docs/ARCHITECTURE_ANALYSIS.md)
-2. **工程复刻**——用 Python + OpenCV 重建这套能力，并补上原产品缺失的三块：透视校正、亚像素精度、诚实降级。
+2. **报告拆解**——拿到一份 CardGrade「CGI Vision AI」的真实报告 PDF，从 PDF 对象层反推它的生成链路、评分模型与文案机制：[`docs/report-teardown-zh.md`](docs/report-teardown-zh.md)
+3. **本地化方案**——在单机上自建同类报告的完整实施路径（模块划分、技术选型、分阶段验收、部署命令）：[`docs/local-build-plan-zh.md`](docs/local-build-plan-zh.md)
+4. **工程复刻**——用 Python + OpenCV 重建这套能力，并补上原产品缺失的三块：透视校正、亚像素精度、诚实降级。
 
 ---
 
